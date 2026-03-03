@@ -84,15 +84,13 @@ function processData(raw: DataRow[]): ProcessedData {
     if (!d) return;
     if (!dateMap[d]) dateMap[d] = { date: d, total: 0, Positivo: 0, Negativo: 0, Neutro: 0 };
     dateMap[d].total++;
-    if (r.Sentimiento in dateMap[d]) (dateMap[d] as Record<string, number>)[r.Sentimiento]++;
-  });
+    if (r.Sentimiento === "Positivo" || r.Sentimiento === "Negativo" || r.Sentimiento === "Neutro") dateMap[d][r.Sentimiento]++;  });
   const trendData = Object.values(dateMap).sort((a, b) => a.date.localeCompare(b.date));
   const fuenteMap: Record<string, { fuente: string; Positivo: number; Negativo: number; Neutro: number; total: number }> = {};
   raw.forEach(r => {
     if (!fuenteMap[r.Fuente]) fuenteMap[r.Fuente] = { fuente: r.Fuente, Positivo: 0, Negativo: 0, Neutro: 0, total: 0 };
     fuenteMap[r.Fuente].total++;
-    if (r.Sentimiento in fuenteMap[r.Fuente]) (fuenteMap[r.Fuente] as Record<string, number>)[r.Sentimiento]++;
-  });
+if (r.Sentimiento === "Positivo" || r.Sentimiento === "Negativo" || r.Sentimiento === "Neutro") fuenteMap[r.Fuente][r.Sentimiento]++;  });
   const fuenteData = Object.values(fuenteMap).sort((a, b) => b.total - a.total);
   const autorMap: Record<string, { autor: string; menciones: number; alcance: number; fuente: string }> = {};
   raw.forEach(r => {
