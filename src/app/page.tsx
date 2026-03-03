@@ -135,7 +135,10 @@ function parseExcel(file: File): Promise<{ social: SocialRow[]; media: MediaRow[
           const isMedia = cols.some(c => c.toLowerCase().includes("tipo de medio") || c.toLowerCase().includes("tier"));
           const isSocial = cols.some(c => c.toLowerCase().includes("plataforma") || c.toLowerCase().includes("me gusta"));
           if (isMedia && !isSocial) {
-            json.forEach(row => { media.push({ Titulo: String(row["Titulo"] || row["Título"] || ""), Texto: String(row["Texto"] || ""), Autor: String(row["Autor"] || ""), Fecha: String(row["Fecha"] || "").substring(0, 10), Medio: String(row["Nombre del Medio"] || ""), TipoMedio: String(row["Tipo de Medio"] || ""), Sentimiento: String(row["Sentimiento"] || ""), Alcance: Number(row["Alcance"] || 0), Tier: String(row["Tier"] || ""), Costo: Number(row["Costo"] || 0), Link: String(row["Link de Nota"] || row["Link URL Medio"] || "") }); });
+            json.forEach(row => {
+              const mf = row["Fecha"]; let mfs = "";
+              if (typeof mf === "number") { const dd = XLSX.SSF.parse_date_code(mf); mfs = dd.y + "-" + String(dd.m).padStart(2, "0") + "-" + String(dd.d).padStart(2, "0"); } else { mfs = String(mf || "").substring(0, 10); }
+              media.push({ Titulo: String(row["Titulo"] || row["Título"] || ""), Texto: String(row["Texto"] || ""), Autor: String(row["Autor"] || ""), Fecha: mfs, Medio: String(row["Nombre del Medio"] || ""), TipoMedio: String(row["Tipo de Medio"] || ""), Sentimiento: String(row["Sentimiento"] || ""), Alcance: Number(row["Alcance"] || 0), Tier: String(row["Tier"] || ""), Costo: Number(row["Costo"] || 0), Link: String(row["Link de Nota"] || row["Link URL Medio"] || "") }); });
           } else if (isSocial) {
             json.forEach(row => {
               const f = row["Fecha"]; let fs = "";
@@ -214,8 +217,8 @@ function Donut(pp: { data: { Positivo: number; Negativo: number; Neutro: number 
         <Pie data={cd} cx={80} cy={80} innerRadius={35} outerRadius={68} paddingAngle={3} dataKey="value" stroke="none">
           {cd.map((entry, idx) => <Cell key={idx} fill={entry.color} />)}
         </Pie>
-        <text x={80} y={76} textAnchor="middle" dominantBaseline="central" fontSize={18} fontWeight={700} fill="#1a1a2e">{total}</text>
-        <text x={80} y={92} textAnchor="middle" dominantBaseline="central" fontSize={9} fill="#94a3b8">notas</text>
+        <text x={80} y={77} textAnchor="middle" dominantBaseline="central" fontSize={16} fontWeight={700} fill="#1a1a2e">{total}</text>
+        <text x={80} y={93} textAnchor="middle" dominantBaseline="central" fontSize={9} fill="#94a3b8">notas</text>
       </PieChart>
       <div className="flex gap-2 mt-1.5">
         {cd.map((item, idx) => (
