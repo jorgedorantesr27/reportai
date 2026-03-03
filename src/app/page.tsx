@@ -217,8 +217,8 @@ function Donut(pp: { data: { Positivo: number; Negativo: number; Neutro: number 
         <Pie data={cd} cx={80} cy={80} innerRadius={35} outerRadius={68} paddingAngle={3} dataKey="value" stroke="none">
           {cd.map((entry, idx) => <Cell key={idx} fill={entry.color} />)}
         </Pie>
-        <text x={80} y={77} textAnchor="middle" dominantBaseline="central" fontSize={16} fontWeight={700} fill="#1a1a2e">{total}</text>
-        <text x={80} y={93} textAnchor="middle" dominantBaseline="central" fontSize={9} fill="#94a3b8">notas</text>
+        <text x={80} y={75} textAnchor="middle" dominantBaseline="auto" fontSize={16} fontWeight={700} fill="#1a1a2e">{total}</text>
+        <text x={80} y={90} textAnchor="middle" dominantBaseline="auto" fontSize={9} fill="#94a3b8">notas</text>
       </PieChart>
       <div className="flex gap-2 mt-1.5">
         {cd.map((item, idx) => (
