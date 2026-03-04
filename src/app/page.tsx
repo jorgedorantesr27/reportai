@@ -287,7 +287,7 @@ export default function Home(){
   const aiT=(section:string,fallback:string)=>aiTexts[section]||fallback;
 
   const callGemini=useCallback(async(prompt:string):Promise<{text:string;inputTokens:number;outputTokens:number}>=>{
-    const models=["gemini-2.0-flash","gemini-1.5-flash"];
+    const models=["gemini-2.5-flash","gemini-2.0-flash","gemini-3-flash-preview"];
     for(const model of models){
       try{
         const res=await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${geminiKey}`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({contents:[{parts:[{text:prompt}]}],generationConfig:{temperature:0.7,maxOutputTokens:8000}})});
