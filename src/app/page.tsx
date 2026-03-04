@@ -408,10 +408,30 @@ Responde ÚNICAMENTE con JSON válido. Sin markdown, sin backticks, sin texto ex
     try{
       const result=await callGemini(prompt);
       const raw=result.text;
-      const clean=raw.replace(/```json|```/g,"").trim();
-      const sanitized=clean.replace(/[\x00-\x1f]/g,(ch:string)=>{if(ch==="\n")return"\\n";if(ch==="\r")return"";if(ch==="\t")return" ";return""});
+      console.log("Gemini raw response length:",raw.length,"First 200 chars:",raw.substring(0,200));
+      /* Aggressive JSON extraction */
+      const stripped=raw.replace(/```json|```/g,"").trim();
+      /* Find the outermost JSON object */
+      const firstBrace=stripped.indexOf("{");const lastBrace=stripped.lastIndexOf("}");
+      if(firstBrace===-1||lastBrace===-1||lastBrace<=firstBrace)throw new Error("No se encontró JSON en la respuesta de Gemini");
+      const jsonStr=stripped.substring(firstBrace,lastBrace+1);
+      /* Clean control characters inside string values */
+      const cleanJson=jsonStr.replace(/[\x00-\x08\x0b\x0c\x0e-\x1f]/g,"").replace(/\t/g," ");
       let parsed;
-      try{parsed=JSON.parse(sanitized)}catch{const m=sanitized.match(/\{[\s\S]*\}/);if(m){try{parsed=JSON.parse(m[0])}catch{const m2=m[0].replace(/[\x00-\x1f]/g,c=>c==="\n"?"\\n":"");parsed=JSON.parse(m2)}}else throw new Error("Respuesta no es JSON válido")}
+      try{parsed=JSON.parse(cleanJson)}catch{
+        /* Strategy 2: escape newlines inside JSON string values */
+        try{
+          let inStr=false;let esc=false;let out="";
+          for(let ci=0;ci<cleanJson.length;ci++){const ch=cleanJson[ci];if(esc){out+=ch;esc=false;continue}if(ch==="\\"){esc=true;out+=ch;continue}if(ch==='"'){inStr=!inStr;out+=ch;continue}if(inStr&&ch==="\n"){out+="\\n";continue}if(inStr&&ch==="\r"){continue}out+=ch}
+          parsed=JSON.parse(out);
+        }catch{
+          /* Strategy 3: Function constructor as lenient parser */
+          try{parsed=Function('"use strict";return ('+cleanJson+')')()}catch{
+            console.error("All JSON parse strategies failed. Raw:",cleanJson.substring(0,500));
+            throw new Error("No se pudo parsear la respuesta de Gemini. Intenta de nuevo.");
+          }
+        }
+      }
       const tx:Record<string,string>={};
       const keys=["resumen","picos","sentimiento","tendSent","fuentes","hora","tier","top5med","tipoNota","estado","conclusiones","recomendaciones","topPub"];
       keys.forEach(k=>{if(parsed[k])tx[k]=parsed[k]});
