@@ -294,7 +294,12 @@ export default function Home(){
         if(!res.ok){const err=await res.json().catch(()=>({}));const msg=err?.error?.message||res.statusText;if(res.status===404)continue;throw new Error(`API ${res.status}: ${msg}`)}
         const data=await res.json();
         if(data?.error)throw new Error(data.error.message||"API Error");
-        const text=data?.candidates?.[0]?.content?.parts?.[0]?.text||"";
+        const parts=data?.candidates?.[0]?.content?.parts||[];
+        /* Gemini 2.5 Flash is a thinking model - skip thought parts, get the actual response */
+        const responsePart=parts.filter((p:{thought?:boolean})=>!p.thought).pop()||parts[parts.length-1]||{text:""};
+        const text=responsePart?.text||"";
+        if(!text)throw new Error("Gemini respondió vacío. Parts: "+JSON.stringify(parts.map((p:{thought?:boolean;text?:string})=>({thought:!!p.thought,len:p.text?.length||0}))));
+
         const usage=data?.usageMetadata||{};
         return{text,inputTokens:usage.promptTokenCount||Math.round(prompt.length/3.5),outputTokens:usage.candidatesTokenCount||Math.round(text.length/3.5)};
       }catch(e){if(model===models[models.length-1])throw e}
@@ -428,7 +433,7 @@ Responde ÚNICAMENTE con JSON válido. Sin markdown, sin backticks, sin texto ex
           /* Strategy 3: Function constructor as lenient parser */
           try{parsed=Function('"use strict";return ('+cleanJson+')')()}catch{
             console.error("All JSON parse strategies failed. Raw:",cleanJson.substring(0,500));
-            throw new Error("No se pudo parsear la respuesta de Gemini. Intenta de nuevo.");
+            throw new Error("JSON inválido. Primeros 300 chars: "+cleanJson.substring(0,300));
           }
         }
       }
