@@ -280,12 +280,13 @@ export default function Home(){
   const[reportPeriod,setReportPeriod]=useState("");
   const[aiLoading,setAiLoading]=useState(false);
   const[geminiKey,setGeminiKey]=useState("");
-  const[promptConfig,setPromptConfig]=useState({subject:"",focus:"marca",tone:"profesional",instructions:""});
+  const[promptConfig,setPromptConfig]=useState({subject:"",focus:"marca",tone:"profesional",instructions:"",dataScope:"top50"});
   const[aiTexts,setAiTexts]=useState<Record<string,string>>({});
   const[aiGenerated,setAiGenerated]=useState(false);
+  const[aiUsage,setAiUsage]=useState<{input:number;output:number;cost:number}|null>(null);
   const aiT=(section:string,fallback:string)=>aiTexts[section]||fallback;
 
-  const callGemini=useCallback(async(prompt:string):Promise<string>=>{
+  const callGemini=useCallback(async(prompt:string):Promise<{text:string;inputTokens:number;outputTokens:number}>=>{
     const models=["gemini-2.0-flash","gemini-1.5-flash"];
     for(const model of models){
       try{
@@ -293,7 +294,9 @@ export default function Home(){
         if(!res.ok){const err=await res.json().catch(()=>({}));const msg=err?.error?.message||res.statusText;if(res.status===404)continue;throw new Error(`API ${res.status}: ${msg}`)}
         const data=await res.json();
         if(data?.error)throw new Error(data.error.message||"API Error");
-        return data?.candidates?.[0]?.content?.parts?.[0]?.text||"";
+        const text=data?.candidates?.[0]?.content?.parts?.[0]?.text||"";
+        const usage=data?.usageMetadata||{};
+        return{text,inputTokens:usage.promptTokenCount||Math.round(prompt.length/3.5),outputTokens:usage.candidatesTokenCount||Math.round(text.length/3.5)};
       }catch(e){if(model===models[models.length-1])throw e}
     }
     throw new Error("No model available");
@@ -302,73 +305,123 @@ export default function Home(){
   const generateAllAI=useCallback(async()=>{
     if(!geminiKey||!pd)return;
     if(!geminiKey.startsWith("AIza")){alert("La API Key no parece válida. Debe empezar con 'AIza...'");return}
-    setAiLoading(true);setAiGenerated(false);
-    /* Build rich context with sentiment-tagged mentions */
+    setAiLoading(true);setAiGenerated(false);setAiUsage(null);
     const socRows=(pd.rawRows as (SocialRow|MediaRow)[]).filter(r=>"Fuente" in r) as SocialRow[];
     const medRows=(pd.rawRows as (SocialRow|MediaRow)[]).filter(r=>"TipoMedio" in r) as MediaRow[];
-    const topPos=[...socRows.filter(r=>r.Sentimiento==="Positivo").sort((a,b)=>b.Alcance-a.Alcance).slice(0,5),...medRows.filter(r=>r.Sentimiento==="Positivo").sort((a,b)=>b.Alcance-a.Alcance).slice(0,5)];
-    const topNeg=[...socRows.filter(r=>r.Sentimiento==="Negativo").sort((a,b)=>b.Alcance-a.Alcance).slice(0,5),...medRows.filter(r=>r.Sentimiento==="Negativo").sort((a,b)=>b.Alcance-a.Alcance).slice(0,5)];
-    const topAll=[...pd.rawRows as (SocialRow|MediaRow)[]].slice(0,15);
-    const fmtRow=(r:SocialRow|MediaRow,i:number)=>{if("Fuente" in r){const s=r as SocialRow;return`[${i+1}] "${(s.Contenido||"").substring(0,100)}" | ${s.Fuente} | ${s.Autor} | Sent: ${s.Sentimiento} | Alc: ${s.Alcance} | URL: ${s.Link||"sin link"}`}const m=r as MediaRow;return`[${i+1}] "${(m.Titulo||"").substring(0,100)}" | ${m.TipoMedio} | ${m.Medio} | Sent: ${m.Sentimiento} | Alc: ${m.Alcance} | URL: ${m.Link||"sin link"}`};
+    /* Data scope: how many mentions to include */
+    const scope=promptConfig.dataScope;
+    const maxRows=scope==="all"?9999:scope==="top100"?100:50;
+    const sortByAlc=(a:{Alcance:number},b:{Alcance:number})=>b.Alcance-a.Alcance;
+    const allSoc=[...socRows].sort(sortByAlc).slice(0,maxRows);
+    const allMed=[...medRows].sort(sortByAlc).slice(0,maxRows);
+    const topPos=[...socRows.filter(r=>r.Sentimiento==="Positivo").sort(sortByAlc).slice(0,8),...medRows.filter(r=>r.Sentimiento==="Positivo").sort(sortByAlc).slice(0,8)];
+    const topNeg=[...socRows.filter(r=>r.Sentimiento==="Negativo").sort(sortByAlc).slice(0,8),...medRows.filter(r=>r.Sentimiento==="Negativo").sort(sortByAlc).slice(0,8)];
+    const contentLen=scope==="all"?500:scope==="top100"?350:250;
+    const fmtS=(r:SocialRow,i:number)=>`[S${i+1}] @${r.Autor} | ${r.Fuente} | ${r.Sentimiento} | Alc:${r.Alcance} | URL: ${r.Link||"-"}
+  Contenido: "${(r.Contenido||"").substring(0,contentLen)}"`;
+    const fmtM=(r:MediaRow,i:number)=>`[M${i+1}] ${r.Medio} | ${r.TipoMedio} | ${r.Sentimiento} | Alc:${r.Alcance} | Tier:${r.Tier||"-"} | URL: ${r.Link||"-"}
+  Título: "${(r.Titulo||"").substring(0,200)}"
+  Texto: "${(r.Texto||"").substring(0,contentLen)}"`;
     const sujeto=promptConfig.subject||"el sujeto monitoreado";
-    const fuenteDist=pd.fuenteData.map(f=>`${f.fuente}: ${f.total} (Pos:${f.Positivo} Neg:${f.Negativo} Neu:${f.Neutro})`).join(", ");
-    const prompt=`Eres un analista senior experto en monitoreo de medios y redes sociales. Genera un análisis profesional con tono ${promptConfig.tone} sobre "${sujeto}". Enfoque: ${promptConfig.focus}. ${promptConfig.instructions?("INSTRUCCIONES ESPECIALES: "+promptConfig.instructions):""}
+    const fuenteDist=pd.fuenteData.map(f=>`${f.fuente}: ${f.total} (Pos:${f.Positivo} Neg:${f.Negativo} Neu:${f.Neutro})`).join("\n  ");
+    const trendPeaks=pd.trendData.length>0?[...pd.trendData].sort((a,b)=>b.total-a.total).slice(0,5).map(t=>`${t.date}: ${t.total} menciones (Pos:${t.Positivo} Neg:${t.Negativo})`).join("\n  "):"Sin datos";
 
-═══ DATOS ESTADÍSTICOS DEL PERIODO ═══
-- Total menciones: ${pd.totalMenciones}
-- Alcance total: ${pd.totalAlcance.toLocaleString()} impresiones
-- Interacciones: ${pd.totalInteracciones.toLocaleString()}
-- Costo/AVE total: $${pd.totalCosto.toLocaleString()}
-- Sentimiento: Positivo ${pd.sentCounts.Positivo} (${pd.totalMenciones>0?((pd.sentCounts.Positivo/pd.totalMenciones)*100).toFixed(1):"0"}%), Negativo ${pd.sentCounts.Negativo} (${pd.totalMenciones>0?((pd.sentCounts.Negativo/pd.totalMenciones)*100).toFixed(1):"0"}%), Neutro ${pd.sentCounts.Neutro}
-- Sentimiento Neto: ${pd.sentNeto.toFixed(1)}%
-- Distribución por fuente (con sentimiento): ${fuenteDist}
-- Tipo de reporte: ${pd.dataType}
-${pd.tierData.length>0?("- Distribución por Tier: "+pd.tierData.map(t=>t.name+": "+t.value).join(", ")):""}
-${pd.estadoData.length>0?("- Top estados: "+pd.estadoData.slice(0,5).map(e=>e.name+": "+e.value).join(", ")):""}
+    const prompt=`Eres un analista senior experto en monitoreo de medios, reputación y análisis de opinión pública. Tu especialidad es ${promptConfig.focus}. Genera un análisis profesional con tono ${promptConfig.tone} sobre "${sujeto}".
+${promptConfig.instructions?("\nINSTRUCCIONES ESPECIALES DEL USUARIO: "+promptConfig.instructions):""}
 
-═══ TOP MENCIONES POSITIVAS (cita estas como fuente de lo positivo) ═══
-${topPos.map((r,i)=>fmtRow(r,i)).join("\n")}
+═══ REGLA DE ORO ═══
+CAUSALIDAD: No solo describas el qué, EXPLICA EL PORQUÉ. Cada afirmación debe estar respaldada por evidencia de los datos.
 
-═══ TOP MENCIONES NEGATIVAS (cita estas como fuente de lo negativo) ═══
-${topNeg.map((r,i)=>fmtRow(r,i+topPos.length)).join("\n")}
+═══ DATOS ESTADÍSTICOS ═══
+Total menciones: ${pd.totalMenciones}
+Alcance: ${pd.totalAlcance.toLocaleString()}
+Interacciones: ${pd.totalInteracciones.toLocaleString()}
+Costo/AVE: $${pd.totalCosto.toLocaleString()}
+Sentimiento: Positivo ${pd.sentCounts.Positivo} (${pd.totalMenciones>0?((pd.sentCounts.Positivo/pd.totalMenciones)*100).toFixed(1):"0"}%), Negativo ${pd.sentCounts.Negativo} (${pd.totalMenciones>0?((pd.sentCounts.Negativo/pd.totalMenciones)*100).toFixed(1):"0"}%), Neutro ${pd.sentCounts.Neutro} (${pd.totalMenciones>0?((pd.sentCounts.Neutro/pd.totalMenciones)*100).toFixed(1):"0"}%)
+Sentimiento Neto: ${pd.sentNeto.toFixed(1)}%
+Tipo reporte: ${pd.dataType}
+${pd.tierData.length>0?"Tiers: "+pd.tierData.map(t=>t.name+":"+t.value).join(", "):""}
+${pd.estadoData.length>0?"Estados: "+pd.estadoData.slice(0,8).map(e=>e.name+":"+e.value).join(", "):""}
+${pd.top5Medios.length>0?"Top medios: "+pd.top5Medios.map(m=>m.nombre+":"+m.total).join(", "):""}
 
-═══ MUESTRA GENERAL DE MENCIONES ═══
-${topAll.map((r,i)=>fmtRow(r,i+topPos.length+topNeg.length)).join("\n")}
+Distribución por fuente:
+  ${fuenteDist}
 
-═══ INSTRUCCIONES DE FORMATO ═══
-Genera un JSON con estas claves. Cada valor debe ser un análisis de 3-5 oraciones MÍNIMO.
-REGLA CRÍTICA: Cada sección DEBE incluir al menos una referencia con formato [Ver fuente](URL_REAL) usando las URLs reales de las menciones listadas arriba.
-Para "sentimiento": explica QUÉ temas fueron positivos y cuáles negativos, citando menciones específicas.
-Para "temas": identifica 3-4 temas reales del contenido, cada uno con detalle y fuente.
+Picos de actividad (top 5 días):
+  ${trendPeaks}
 
-{
-  "resumen": "Resumen ejecutivo completo del periodo analizado, con datos duros y contexto...",
-  "temas": [{"tema":"Nombre del tema real","detalle":"Explicación con datos y [Ver fuente](url)"},{"tema":"...","detalle":"..."},{"tema":"...","detalle":"..."}],
-  "picos": "Análisis de picos en tendencia, qué los causó, con [Ver fuente](url)...",
-  "sentimiento": "Análisis detallado: qué genera sentimiento positivo, qué genera negativo, con ejemplos y [Ver fuente](url)...",
-  "tendSent": "Cómo evolucionó el sentimiento en el periodo...",
-  "fuentes": "Qué fuentes dominan y por qué, con [Ver fuente](url)...",
-  "hora": "Patrones horarios de actividad y recomendaciones...",
-  "tier": "Distribución por tier y qué significa para cobertura...",
-  "top5med": "Análisis de medios con mayor cobertura y [Ver fuente](url)...",
-  "tipoNota": "Tipos de nota predominantes y su significado...",
-  "estado": "Distribución geográfica y focos regionales...",
-  "conclusiones": "3-4 conclusiones clave con datos que las respalden...",
-  "recomendaciones": "4-5 recomendaciones estratégicas accionables y específicas...",
-  "topPub": "Análisis de publicaciones con mayor impacto y [Ver fuente](url)..."
-}
+═══ MENCIONES POSITIVAS DESTACADAS ═══
+${topPos.map((r,i)=>"Fuente" in r?fmtS(r as SocialRow,i):fmtM(r as MediaRow,i)).join("\n")}
 
-Responde ÚNICAMENTE con el JSON válido, sin markdown, sin backticks, sin texto adicional.`;
+═══ MENCIONES NEGATIVAS DESTACADAS ═══
+${topNeg.map((r,i)=>"Fuente" in r?fmtS(r as SocialRow,i):fmtM(r as MediaRow,i)).join("\n")}
+
+═══ MUESTRA AMPLIA DE REDES SOCIALES (${allSoc.length} de ${socRows.length}) ═══
+${allSoc.map((r,i)=>fmtS(r,i)).join("\n")}
+
+═══ MUESTRA AMPLIA DE MEDIOS (${allMed.length} de ${medRows.length}) ═══
+${allMed.map((r,i)=>fmtM(r,i)).join("\n")}
+
+═══ INSTRUCCIONES POR SECCIÓN ═══
+Genera JSON con estas claves. USA las URLs reales de arriba con formato [Ver fuente](URL).
+
+"resumen" — ANÁLISIS PROFUNDO, 5-7 párrafos largos. Incluir:
+  1) Contexto general y volumen total
+  2) Narrativa dominante: cuáles fueron los grandes temas y por qué surgieron
+  3) Cada tema/afirmación con [Ver fuente](url) de las menciones
+  4) Balance de sentimiento explicando drivers positivos y negativos
+  5) Balance final de reputación/percepción
+  Mínimo 800 palabras.
+
+"temas" — Array de 3-5 INSIGHTS no obvios. Busca patrones ocultos. Cada uno:
+  {"tema":"Nombre","detalle":"Explicación con nombre de medio/usuario + [Ver fuente](url). 3-4 oraciones."}
+
+"picos" — Identifica los picos de la gráfica de tendencia usando los datos de picos arriba. Explica QUÉ temas causaron cada pico. Con [Ver fuente](url).
+
+"sentimiento" — ANÁLISIS PROFUNDO. Explicar:
+  - Qué temas generan sentimiento positivo y POR QUÉ (drivers emocionales)
+  - Qué temas generan sentimiento negativo y POR QUÉ
+  - Citar menciones específicas con [Ver fuente](url)
+  Mínimo 4 párrafos.
+
+"tendSent" — Identificar picos de sentimiento positivo/negativo a lo largo del tiempo y qué eventos los causaron. Con [Ver fuente](url).
+
+"fuentes" — Interpretativo: qué fuente/red domina y por qué. 2-3 oraciones.
+"hora" — Interpretativo: horarios de mayor actividad y recomendaciones. 2-3 oraciones.
+"tier" — Interpretativo: distribución de tiers y qué significa. 2-3 oraciones.
+"top5med" — Interpretativo: medios con más cobertura. 2-3 oraciones.
+"tipoNota" — Interpretativo: tipos de nota predominantes. 2-3 oraciones.
+"estado" — Interpretativo: focos geográficos. 2-3 oraciones.
+"topPub" — Interpretativo: publicaciones de mayor impacto. 2-3 oraciones.
+
+"conclusiones" — ANÁLISIS PROFUNDO. Evaluar la salud reputacional de "${sujeto}":
+  - Estado general de la conversación
+  - Fortalezas detectadas
+  - Riesgos y vulnerabilidades
+  - Comparación implícita con lo esperado
+  Mínimo 3 párrafos con [Ver fuente](url).
+
+"recomendaciones" — ANÁLISIS PROFUNDO. Dividir en:
+  - Acciones Inmediatas (control de daños si aplica, respuesta a negativos)
+  - Acciones a Futuro (mejoras operativas, comunicación, amplificación de positivos)
+  Mínimo 4-5 recomendaciones específicas y accionables.
+
+Responde ÚNICAMENTE con JSON válido. Sin markdown, sin backticks, sin texto extra.`;
     try{
-      const raw=await callGemini(prompt);
+      const result=await callGemini(prompt);
+      const raw=result.text;
       const clean=raw.replace(/```json|```/g,"").trim();
       let parsed;
-      try{parsed=JSON.parse(clean)}catch{const m=clean.match(/\{[\s\S]*\}/);if(m)parsed=JSON.parse(m[0]);else throw new Error("Respuesta no es JSON válido")}
+      try{parsed=JSON.parse(clean)}catch{const m=clean.match(/{[\s\S]*}/);if(m)parsed=JSON.parse(m[0]);else throw new Error("Respuesta no es JSON válido")}
       const tx:Record<string,string>={};
       const keys=["resumen","picos","sentimiento","tendSent","fuentes","hora","tier","top5med","tipoNota","estado","conclusiones","recomendaciones","topPub"];
       keys.forEach(k=>{if(parsed[k])tx[k]=parsed[k]});
       if(Array.isArray(parsed.temas))tx.temas=JSON.stringify(parsed.temas);
       setAiTexts(tx);setAiGenerated(true);
+      const inputTk=result.inputTokens;const outputTk=result.outputTokens;
+      const costUsd=(inputTk*0.0000001)+(outputTk*0.0000004);
+      const mxnRate=20.5;
+      setAiUsage({input:inputTk,output:outputTk,cost:costUsd*mxnRate});
     }catch(err:unknown){const msg=err instanceof Error?err.message:String(err);console.error("Gemini error:",err);alert("Error: "+msg+"\n\nVerifica tu API Key y que tengas acceso a Gemini API.")}
     setAiLoading(false);
   },[geminiKey,pd,promptConfig,callGemini]);
@@ -441,7 +494,8 @@ Responde ÚNICAMENTE con el JSON válido, sin markdown, sin backticks, sin texto
             <div className="mb-4"><label className="text-[11px] text-gray-500 font-medium block mb-1">API Key de Google Gemini</label><div className="flex gap-2"><input type="password" value={geminiKey} onChange={e=>setGeminiKey(e.target.value)} placeholder="AIzaSy..." className="flex-1 px-3 py-2 rounded-lg border border-gray-200 text-sm outline-none focus:border-purple-400 font-mono"/><a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener noreferrer" className="px-3 py-2 rounded-lg text-[11px] font-semibold no-underline flex items-center gap-1" style={{background:"#8b5cf6",color:"white"}}><Key size={12}/>Obtener</a></div><p className="text-[10px] text-gray-400 mt-1">Usa la capa gratuita de Gemini 2.0 Flash. Tu key no se almacena.</p></div>
             <div className="mb-3"><label className="text-[11px] text-gray-500 font-medium block mb-1">Sujeto de análisis</label><input value={promptConfig.subject} onChange={e=>setPromptConfig(p=>({...p,subject:e.target.value}))} placeholder="Ej: Tim Burton, Coca-Cola, AMLO, Juegos Olímpicos..." className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm outline-none focus:border-purple-400"/></div>
             <div className="grid grid-cols-2 gap-3 mb-3"><div><label className="text-[11px] text-gray-500 font-medium block mb-1">Enfoque</label><select value={promptConfig.focus} onChange={e=>setPromptConfig(p=>({...p,focus:e.target.value}))} className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm outline-none">{["marca","persona","gobierno","institución","evento","lugar","producto","otro"].map(o=><option key={o} value={o}>{o.charAt(0).toUpperCase()+o.slice(1)}</option>)}</select></div><div><label className="text-[11px] text-gray-500 font-medium block mb-1">Tono</label><select value={promptConfig.tone} onChange={e=>setPromptConfig(p=>({...p,tone:e.target.value}))} className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm outline-none">{["profesional","ejecutivo","periodístico","académico","casual"].map(o=><option key={o} value={o}>{o.charAt(0).toUpperCase()+o.slice(1)}</option>)}</select></div></div>
-            <div><label className="text-[11px] text-gray-500 font-medium block mb-1">Instrucciones adicionales (opcional)</label><textarea value={promptConfig.instructions} onChange={e=>setPromptConfig(p=>({...p,instructions:e.target.value}))} placeholder="Ej: Enfócate en la percepción de marca, menciona competidores, destaca crisis..." className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm outline-none focus:border-purple-400 resize-none" rows={3}/></div>
+            <div className="mb-3"><label className="text-[11px] text-gray-500 font-medium block mb-1">Instrucciones adicionales (opcional)</label><textarea value={promptConfig.instructions} onChange={e=>setPromptConfig(p=>({...p,instructions:e.target.value}))} placeholder="Ej: Actúa como analista senior en entretenimiento. Enfócate en percepción del público, viralidad, competidores..." className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm outline-none focus:border-purple-400 resize-none" rows={3}/></div>
+            <div><label className="text-[11px] text-gray-500 font-medium block mb-1">Alcance de datos para IA</label><select value={promptConfig.dataScope} onChange={e=>setPromptConfig(p=>({...p,dataScope:e.target.value}))} className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm outline-none"><option value="top50">Top 50 menciones (rápido, menor costo)</option><option value="top100">Top 100 menciones (balance)</option><option value="all">Toda la información (más profundo, mayor costo)</option></select><p className="text-[10px] text-gray-400 mt-1">A mayor alcance, el análisis es más profundo pero consume más tokens.</p></div>
           </div>
         </div>)}
         {/* ═══════ REPORT ═══════ */}
@@ -456,6 +510,7 @@ Responde ÚNICAMENTE con el JSON válido, sin markdown, sin backticks, sin texto
                 <button onClick={()=>setShowChecklist(!showChecklist)} className="flex items-center gap-1.5 px-3 py-1.5 bg-white border border-gray-200 rounded-lg cursor-pointer text-xs text-gray-500"><Check size={12}/> Módulos</button>
                 <button onClick={generateAllAI} disabled={!geminiKey||aiLoading} className="flex items-center gap-1.5 px-4 py-1.5 rounded-lg cursor-pointer text-xs font-semibold text-white border-none disabled:opacity-40" style={{background:aiLoading?"#94a3b8":"linear-gradient(135deg,#8b5cf6,#7c3aed)"}}>{aiLoading?<><RefreshCw size={12} className="animate-spin"/> Generando...</>:<><Zap size={12}/> Generar análisis</>}</button>
                 {aiGenerated&&<span className="text-[10px] text-green-600 font-semibold flex items-center gap-1"><Check size={12}/>IA generada</span>}
+                {aiUsage&&<div className="flex items-center gap-3 text-[10px] text-gray-400 bg-gray-50 px-3 py-1.5 rounded-lg"><span>Entrada: ~{aiUsage.input.toLocaleString()} tokens</span><span>Salida: ~{aiUsage.output.toLocaleString()} tokens</span><span className="font-semibold text-gray-600">Costo est: ${aiUsage.cost<0.01?"<$0.01 MXN":("$"+aiUsage.cost.toFixed(2)+" MXN")}</span></div>}
                 <button onClick={()=>setShowExport(!showExport)} className="flex items-center gap-1.5 px-4 py-1.5 border-none rounded-lg cursor-pointer text-xs font-semibold text-white" style={{background:"linear-gradient(135deg,#3b82f6,#2563eb)"}}><Download size={12}/> Exportar</button>
                 {showExport&&<div className="absolute top-full right-0 mt-1 bg-white rounded-xl shadow-xl border border-gray-100 overflow-hidden min-w-[140px] z-20">{["PDF","Word","PPT"].map(ff=><button key={ff} onClick={()=>{setShowExport(false);alert(ff+" - Siguiente fase")}} className="w-full px-3 py-2 border-none bg-transparent cursor-pointer text-left hover:bg-gray-50 text-sm text-gray-700">{ff}</button>)}</div>}
               </div>
