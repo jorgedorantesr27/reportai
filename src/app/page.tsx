@@ -247,8 +247,9 @@ function DonutGrid({items,brand}:{items:FuenteRow[];brand:Brand}){
   return<div>{rows.map((c,ri)=>{const slice=items.slice(off,off+c);off+=c;return<div key={ri}>{Row(slice,off-c)}</div>})}</div>;
 }
 function AIBlock({text,brand,loading}:{text:string;brand:Brand;loading:boolean}){
-  const parts=text.split(/(\[Ver fuente\]\([^)]+\))/g);
-  return(<div className="rounded-xl p-4" style={{background:"linear-gradient(135deg,#f0f9ff 0%,#f5f3ff 100%)",borderLeft:"4px solid "+brand.accentColor}}><div className="flex items-center gap-1.5 mb-2"><Sparkles size={13} color={brand.accentColor}/><span className="text-[10px] font-semibold uppercase tracking-wider" style={{color:brand.accentColor}}>Análisis IA</span></div>{loading?<div className="flex gap-1.5 py-2">{[0,1,2].map(i=><div key={i} className="w-2 h-2 rounded-full" style={{background:brand.accentColor,animation:"pulse 1.2s ease-in-out "+(i*0.2)+"s infinite"}}/>)}</div>:<p className="text-sm leading-relaxed text-gray-700">{parts.map((p,i)=>{const m=p.match(/\[Ver fuente\]\(([^)]+)\)/);if(m)return <a key={i} href={m[1]} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-semibold no-underline ml-1" style={{background:brand.accentColor+"15",color:brand.accentColor}}><ExternalLink size={10}/>Ver fuente</a>;return <span key={i}>{p}</span>})}</p>}</div>);
+  const renderText=(t:string)=>{const parts=t.split(/(\[Ver fuente\]\([^)]+\))/g);return parts.map((p,i)=>{const m=p.match(/\[Ver fuente\]\(([^)]+)\)/);if(m)return <a key={i} href={m[1]} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-semibold no-underline ml-1" style={{background:brand.accentColor+"15",color:brand.accentColor}}><ExternalLink size={10}/>Ver fuente</a>;return <span key={i}>{p}</span>})};
+  const paragraphs=text.split(/\s*\|\|\s*/).filter(Boolean);
+  return(<div className="rounded-xl p-4" style={{background:"linear-gradient(135deg,#f0f9ff 0%,#f5f3ff 100%)",borderLeft:"4px solid "+brand.accentColor}}><div className="flex items-center gap-1.5 mb-2"><Sparkles size={13} color={brand.accentColor}/><span className="text-[10px] font-semibold uppercase tracking-wider" style={{color:brand.accentColor}}>Análisis IA</span></div>{loading?<div className="flex gap-1.5 py-2">{[0,1,2].map(i=><div key={i} className="w-2 h-2 rounded-full" style={{background:brand.accentColor,animation:"pulse 1.2s ease-in-out "+(i*0.2)+"s infinite"}}/>)}</div>:<div className="space-y-2">{paragraphs.map((pg,pi)=><p key={pi} className="text-sm leading-relaxed text-gray-700">{renderText(pg)}</p>)}</div>}</div>);
 }
 function Sec({title,icon,children,brand}:{title:string;icon:React.ReactNode;children:React.ReactNode;brand:Brand}){return(<div className="bg-white rounded-2xl p-6 border border-gray-100 overflow-hidden" style={{boxShadow:"0 1px 3px rgba(0,0,0,0.04)"}}><div className="flex items-center gap-2.5 mb-5"><div className="w-9 h-9 rounded-lg flex items-center justify-center" style={{background:brand.accentColor+"12"}}>{icon}</div><h2 className="text-base font-bold" style={{color:brand.primaryColor,fontFamily:brand.titleFont}}>{title}</h2></div>{children}</div>)}
 function MenCard({autor,contenido,link,fuente,alcance,brand,tipo}:{autor:string;contenido:string;link:string;fuente:string;alcance:number;brand:Brand;tipo:"positivo"|"negativo"}){const c=tipo==="positivo"?brand.positiveColor:brand.negativeColor;return(<div className="rounded-xl p-3.5 border h-full" style={{borderColor:c+"30",background:c+"06"}}><div className="flex justify-between items-start mb-1.5"><div className="flex items-center gap-1.5">{tipo==="positivo"?<ThumbsUp size={12} color={c}/>:<ThumbsDown size={12} color={c}/>}<span className="text-xs font-bold text-gray-800">{autor}</span></div><span className="text-[9px] px-2 py-0.5 rounded-full font-medium flex-shrink-0" style={{background:c+"18",color:c}}>{fuente}</span></div><p className="text-[11px] text-gray-600 leading-relaxed mb-1.5">{contenido.substring(0,200)}{contenido.length>200?"...":""}</p><div className="flex justify-between items-center mt-auto">{link&&link!=="undefined"&&<a href={link} target="_blank" rel="noopener noreferrer" className="text-[10px] font-semibold" style={{color:brand.accentColor}}>Ver original</a>}<span className="text-[9px] text-gray-400">{fmt(alcance)} alcance</span></div></div>)}
@@ -286,11 +287,11 @@ export default function Home(){
   const[aiUsage,setAiUsage]=useState<{input:number;output:number;cost:number}|null>(null);
   const aiT=(section:string,fallback:string)=>aiTexts[section]||fallback;
 
-  const callGemini=useCallback(async(prompt:string):Promise<{text:string;inputTokens:number;outputTokens:number}>=>{
+  const callGemini=useCallback(async(prompt:string):Promise<{text:string;inputTokens:number;outputTokens:number;truncated:boolean}>=>{
     const models=["gemini-2.5-flash","gemini-2.0-flash","gemini-3-flash-preview"];
     for(const model of models){
       try{
-        const res=await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${geminiKey}`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({contents:[{parts:[{text:prompt}]}],generationConfig:{temperature:0.7,maxOutputTokens:8000}})});
+        const res=await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${geminiKey}`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({contents:[{parts:[{text:prompt}]}],generationConfig:{temperature:0.7,maxOutputTokens:16000}})});
         if(!res.ok){const err=await res.json().catch(()=>({}));const msg=err?.error?.message||res.statusText;if(res.status===404)continue;throw new Error(`API ${res.status}: ${msg}`)}
         const data=await res.json();
         if(data?.error)throw new Error(data.error.message||"API Error");
@@ -301,7 +302,8 @@ export default function Home(){
         if(!text)throw new Error("Gemini respondió vacío. Parts: "+JSON.stringify(parts.map((p:{thought?:boolean;text?:string})=>({thought:!!p.thought,len:p.text?.length||0}))));
 
         const usage=data?.usageMetadata||{};
-        return{text,inputTokens:usage.promptTokenCount||Math.round(prompt.length/3.5),outputTokens:usage.candidatesTokenCount||Math.round(text.length/3.5)};
+        const finishReason=data?.candidates?.[0]?.finishReason||"";
+        return{text,inputTokens:usage.promptTokenCount||Math.round(prompt.length/3.5),outputTokens:usage.candidatesTokenCount||Math.round(text.length/3.5),truncated:finishReason==="MAX_TOKENS"};
       }catch(e){if(model===models[models.length-1])throw e}
     }
     throw new Error("No model available");
@@ -409,7 +411,7 @@ Genera JSON con estas claves. USA las URLs reales de arriba con formato [Ver fue
   - Acciones a Futuro (mejoras operativas, comunicación, amplificación de positivos)
   Mínimo 4-5 recomendaciones específicas y accionables.
 
-Responde ÚNICAMENTE con JSON válido. Sin markdown, sin backticks, sin texto extra.`;
+FORMATO CRÍTICO: Responde ÚNICAMENTE con JSON válido. Sin markdown, sin backticks. IMPORTANTE: NO uses saltos de línea dentro de los valores de texto. Escribe cada valor en UNA SOLA LÍNEA continua. Para separar párrafos usa " || " como separador.`;
     try{
       const result=await callGemini(prompt);
       const raw=result.text;
@@ -418,24 +420,17 @@ Responde ÚNICAMENTE con JSON válido. Sin markdown, sin backticks, sin texto ex
       const stripped=raw.replace(/```json|```/g,"").trim();
       /* Find the outermost JSON object */
       const firstBrace=stripped.indexOf("{");const lastBrace=stripped.lastIndexOf("}");
-      if(firstBrace===-1||lastBrace===-1||lastBrace<=firstBrace)throw new Error("No se encontró JSON en la respuesta de Gemini");
+      if(firstBrace===-1||lastBrace===-1||lastBrace<=firstBrace)throw new Error("No se encontró JSON en la respuesta de Gemini. Longitud: "+stripped.length);
       const jsonStr=stripped.substring(firstBrace,lastBrace+1);
+      /* Detect if response was truncated */
+      if(result.truncated)console.warn("Gemini response was truncated (MAX_TOKENS). JSON may be incomplete.");
       /* Clean control characters inside string values */
-      const cleanJson=jsonStr.replace(/[\x00-\x08\x0b\x0c\x0e-\x1f]/g,"").replace(/\t/g," ");
+      /* Remove ALL newlines/carriage returns - Gemini 2.5 puts literal newlines in JSON string values */
+      const cleanJson=jsonStr.replace(/[\x00-\x1f]/g," ").replace(/\s+/g," ");
       let parsed;
       try{parsed=JSON.parse(cleanJson)}catch{
-        /* Strategy 2: escape newlines inside JSON string values */
-        try{
-          let inStr=false;let esc=false;let out="";
-          for(let ci=0;ci<cleanJson.length;ci++){const ch=cleanJson[ci];if(esc){out+=ch;esc=false;continue}if(ch==="\\"){esc=true;out+=ch;continue}if(ch==='"'){inStr=!inStr;out+=ch;continue}if(inStr&&ch==="\n"){out+="\\n";continue}if(inStr&&ch==="\r"){continue}out+=ch}
-          parsed=JSON.parse(out);
-        }catch{
-          /* Strategy 3: Function constructor as lenient parser */
-          try{parsed=Function('"use strict";return ('+cleanJson+')')()}catch{
-            console.error("All JSON parse strategies failed. Raw:",cleanJson.substring(0,500));
-            throw new Error("JSON inválido. Primeros 300 chars: "+cleanJson.substring(0,300));
-          }
-        }
+        console.error("JSON parse failed. First 500:",cleanJson.substring(0,500));
+        throw new Error("JSON inválido. Intenta de nuevo (click Generar análisis).");
       }
       const tx:Record<string,string>={};
       const keys=["resumen","picos","sentimiento","tendSent","fuentes","hora","tier","top5med","tipoNota","estado","conclusiones","recomendaciones","topPub"];
