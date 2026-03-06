@@ -368,6 +368,9 @@ Distribución por fuente:
 Picos de actividad (top 5 días):
   ${trendPeaks}
 
+${pd.hourData.length>0?`Distribución por hora (0-23h):
+  ${pd.hourData.filter(h=>h.total>0).map(h=>h.hora+"h: "+h.total+" menciones").join(", ")}`:""}
+
 ═══ MENCIONES POSITIVAS DESTACADAS ═══
 ${topPos.map((r,i)=>"Fuente" in r?fmtS(r as SocialRow,i):fmtM(r as MediaRow,i)).join("\n")}
 
@@ -381,61 +384,57 @@ ${allSoc.map((r,i)=>fmtS(r,i)).join("\n")}
 ${allMed.map((r,i)=>fmtM(r,i)).join("\n")}
 
 ═══ REGLAS FUNDAMENTALES ═══
-CAUSALIDAD: No solo describas el qué, EXPLICA EL PORQUÉ.
-DOCUMENTO PARA CLIENTE FINAL: Este análisis se presenta directamente al cliente. Redacta como analista senior, NO como auditor del sistema.
+DOCUMENTO PARA CLIENTE FINAL: Este análisis se presenta directamente al cliente. Es un documento final, NO un diagnóstico interno del sistema de monitoreo.
+CAUSALIDAD: No solo describas el qué. Explica el PORQUÉ basándote en el contenido de las menciones.
+CADA SECCIÓN DEBE SER ÚNICA: No repitas información entre secciones.
 
-PROHIBIDO INCLUIR (bajo ninguna circunstancia):
-- Comentarios sobre ausencia de datos, limitaciones del monitoreo o falta de información
-- Frases como "no se cuenta con datos de...", "el análisis es limitado", "no se puede evaluar", "la percepción real podría ser distinta"
-- Recomendaciones estratégicas, operativas o de marketing (EXCEPTO en la sección "recomendaciones")
-- Críticas al sistema de análisis, algoritmo o clasificación de datos
-- Explicaciones técnicas o metodológicas sobre cómo funciona el análisis
-- Menciones al algoritmo, procesamiento de lenguaje natural o sistema de monitoreo
-- Frases que debiliten la credibilidad: "existe una brecha", "es incompleto", "limitación crítica"
-
-ENFOQUE CORRECTO: Narrativa mediática, temas predominantes, evolución de la conversación, drivers de sentimiento, percepción mediática, reputación observada.
-CADA SECCIÓN DEBE SER ÚNICA: No repitas información entre secciones. Cada apartado aporta una perspectiva diferente.
+REGLA ABSOLUTA — PROHIBIDO incluir CUALQUIERA de estos elementos:
+1. NUNCA cuestionar la clasificación de sentimiento. Si una mención está clasificada como negativa, analiza POR QUÉ el contenido puede generar esa percepción. NUNCA digas que "el sistema clasificó mal", "pudo haber interpretado", "fue clasificada como negativa por el sistema", "carente de positividad", "ausencia de un lenguaje explícitamente efusivo".
+2. NUNCA mencionar limitaciones de datos: "no se cuenta con datos de...", "el análisis es limitado", "no se puede evaluar", "la percepción real podría ser distinta", "brecha de información".
+3. NUNCA mencionar el sistema, algoritmo, herramienta de monitoreo, procesamiento de lenguaje natural ni metodología.
+4. NUNCA dar recomendaciones EXCEPTO en la sección "recomendaciones".
+5. NUNCA usar frases que debiliten la credibilidad: "riesgo latente", "limitación crítica", "es incompleto".
+El sentimiento de cada mención es un DATO VERIFICADO. Preséntalo con seguridad y analiza las causas editoriales, NO cuestiones la clasificación.
 
 ═══ INSTRUCCIONES POR SECCIÓN ═══
 Genera JSON con estas claves. USA las URLs reales con formato [Ver fuente](URL).
 
-"resumen" — ANÁLISIS PROFUNDO, ${AI_LENGTHS.resumen}. Incluir:
-  1) Contexto general y volumen
-  2) Narrativa dominante: temas principales y por qué surgieron
-  3) Cada afirmación con [Ver fuente](url)
-  4) Balance de sentimiento con drivers positivos y negativos
-  SIN recomendaciones. SIN mencionar limitaciones.
+"resumen" — ${AI_LENGTHS.resumen}. Separar párrafos con " || ". Estructura:
+  1) Contexto general: tema principal de la cobertura, periodo y magnitud (volumen, relevancia mediática). Con [Ver fuente](url).
+  2) Narrativa dominante: temas que dominaron, hechos/actores/declaraciones que impulsaron la conversación. Con [Ver fuente](url).
+  3) Dinámica de la cobertura: cómo están abordando el tema los medios o redes. Con [Ver fuente](url).
+  4) Balance final de reputación: conclusión general sobre el impacto reputacional del periodo. 
+  NO profundizar en sentimiento aquí (eso va en "sentimiento"). NO dar recomendaciones.
 
 "temas" — Array de ${AI_LENGTHS.temas}. Busca patrones NO OBVIOS. Cada uno:
-  {"tema":"Nombre del tema","detalle":"Explicación con nombre de medio/usuario + [Ver fuente](url). 3-4 oraciones."}
+  {"tema":"Nombre","detalle":"Explicación con nombre de medio/usuario + [Ver fuente](url). 3-4 oraciones."}
 
-"picos" — ${AI_LENGTHS.picos}. Identifica picos de la tendencia, qué eventos los causaron. Con [Ver fuente](url).
+"picos" — ${AI_LENGTHS.picos}. Identifica picos en la gráfica de tendencia temporal y qué eventos los causaron. Con [Ver fuente](url).
 
-"sentimiento" — ${AI_LENGTHS.sentimiento}. Drivers emocionales:
-  - Qué genera sentimiento positivo y POR QUÉ
-  - Qué genera sentimiento negativo y POR QUÉ
-  - Citar menciones específicas con [Ver fuente](url)
-  SIN recomendar acciones.
+"sentimiento" — ${AI_LENGTHS.sentimiento}. Separa con " || ". Analiza:
+  - Qué TEMAS generan sentimiento positivo, QUÉ se dice y POR QUÉ resuena. Citar menciones con [Ver fuente](url).
+  - Qué TEMAS generan sentimiento negativo, QUÉ se critica y POR QUÉ. Citar menciones con [Ver fuente](url).
+  Trata el sentimiento como dato editorial verificado. Profundiza en las CAUSAS desde la perspectiva del contenido.
 
-"tendSent" — Picos de sentimiento positivo/negativo a lo largo del tiempo y qué los causó. Con [Ver fuente](url). 2-3 oraciones.
+"tendSent" — Picos de sentimiento positivo/negativo a lo largo del tiempo y qué eventos los causaron. 2-3 oraciones. Con [Ver fuente](url).
 
-"fuentes" — Interpretativo: qué fuente domina y por qué. 2-3 oraciones.
-"hora" — Interpretativo: describe los horarios de mayor y menor actividad según los datos de la gráfica. 2-3 oraciones.
+"fuentes" — Interpretativo: qué fuente/red domina y por qué. 2-3 oraciones.
+"hora" — IMPORTANTE: Este campo analiza la distribución HORARIA (horas del día 0-23h), NO días de la semana. Usa los datos de "Distribución por hora" proporcionados arriba. Identifica las horas pico de publicaciones y analiza brevemente por qué se concentran ahí. 2-3 oraciones.
 "tier" — Interpretativo: distribución de tiers. 2-3 oraciones.
 "top5med" — Interpretativo: medios con más cobertura. 2-3 oraciones.
 "tipoNota" — Interpretativo: tipos de nota predominantes. 2-3 oraciones.
 "estado" — Interpretativo: focos geográficos. 2-3 oraciones.
 "topPub" — Interpretativo: publicaciones de mayor impacto. 2-3 oraciones.
 
-"conclusiones" — ${AI_LENGTHS.conclusiones}. Evaluar salud reputacional:
-  - Estado de la conversación
+"conclusiones" — ${AI_LENGTHS.conclusiones}. Separar con " || ". Evaluar salud reputacional:
+  - Estado de la conversación y percepción general
   - Fortalezas y riesgos detectados
-  Con [Ver fuente](url). SIN recomendaciones aquí.
+  Con [Ver fuente](url). SIN recomendaciones.
 
-"recomendaciones" — ${AI_LENGTHS.recomendaciones}:
+"recomendaciones" — ${AI_LENGTHS.recomendaciones}. Formato OBLIGATORIO: cada recomendación inicia con **Título de la recomendación:** seguido de la explicación. Dividir en:
   - Acciones Inmediatas (control de daños si aplica)
   - Acciones a Futuro (mejoras de comunicación, amplificación de positivos)
-  Específicas y accionables.
+  Específicas y accionables. Separar cada recomendación con " || ".
 
 FORMATO: JSON válido sin markdown ni backticks. NO uses saltos de línea dentro de valores. Usa " || " para separar párrafos.`;
     try{
@@ -462,7 +461,7 @@ FORMATO: JSON válido sin markdown ni backticks. NO uses saltos de línea dentro
       }
       const tx:Record<string,string>={};
       const keys=["resumen","picos","sentimiento","tendSent","fuentes","hora","tier","top5med","tipoNota","estado","conclusiones","recomendaciones","topPub"];
-      keys.forEach(k=>{if(parsed[k])tx[k]=typeof parsed[k]==="string"?parsed[k]:JSON.stringify(parsed[k])});
+      keys.forEach(k=>{if(parsed[k]){const v=parsed[k];if(typeof v==="string")tx[k]=v;else if(Array.isArray(v))tx[k]=v.map(String).join(" || ");else tx[k]=JSON.stringify(v)}});
       if(Array.isArray(parsed.temas))tx.temas=JSON.stringify(parsed.temas);
       setAiTexts(tx);setAiTextsByTab(p=>({...p,[tab]:tx}));setAiGenerated(true);
       const inputTk=result.inputTokens;const outputTk=result.outputTokens;
