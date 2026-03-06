@@ -301,6 +301,7 @@ export default function Home(){
   const[aiUsage,setAiUsage]=useState<{input:number;output:number;cost:number}|null>(null);
   const aiT=(section:string,fallback:string)=>aiTexts[section]||fallback;
 
+  const[tab,setTab]=useState<"social"|"media"|"fusionado">("social");
   const callGemini=useCallback(async(prompt:string):Promise<{text:string;inputTokens:number;outputTokens:number;truncated:boolean}>=>{
     const models=["gemini-2.5-flash","gemini-2.0-flash","gemini-3-flash-preview"];
     for(const model of models){
@@ -471,7 +472,6 @@ FORMATO: JSON válido sin markdown ni backticks. NO uses saltos de línea dentro
   },[geminiKey,pd,promptConfig,callGemini,tab]);
   const[showExport,setShowExport]=useState(false);
   const[uploadStatus,setUploadStatus]=useState("");
-  const[tab,setTab]=useState<"social"|"media"|"fusionado">("social");
   const[sData,setSData]=useState<SocialRow[]>([]);
   const[mData,setMData]=useState<MediaRow[]>([]);
   const[logo,setLogo]=useState<string|null>(null);
