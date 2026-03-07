@@ -163,7 +163,7 @@ function parseExcel(file:File):Promise<{social:SocialRow[];media:MediaRow[]}>{
               if(typeof mf==="number"){const dd=XLSX.SSF.parse_date_code(mf);mfs=dd.y+"-"+String(dd.m).padStart(2,"0")+"-"+String(dd.d).padStart(2,"0")}else if(mf instanceof Date){mfs=mf.toISOString().substring(0,10)}else{mfs=String(mf||"").substring(0,10)}
               let costo=parseNum(row["Costo"]);
               if(costo===0){const ref=XLSX.utils.encode_cell({r:json.indexOf(row)+1,c:17});const cell=ws[ref];if(cell)costo=parseNum(cell.v)}
-              media.push({Titulo:String(row["Titulo"]||row["Título"]||""),Texto:String(row["Texto"]||""),Autor:String(row["Autor"]||""),Fecha:mfs,Medio:String(row["Nombre del Medio"]||""),TipoMedio:String(row["Tipo de Medio"]||""),Sentimiento:String(row["Sentimiento"]||""),Alcance:Number(row["Alcance"]||0),Tier:String(row["Tier"]||""),Costo:costo,Link:String(row["Link URL Medio"]||row["Link de Nota"]||""),TipoNota:String(row["Tipo de Nota"]||""),Estado:String(row["Estado"]||"")})
+              media.push({Titulo:String(row["Titulo"]||row["Título"]||""),Texto:String(row["Texto"]||""),Autor:String(row["Autor"]||""),Fecha:mfs,Medio:String(row["Nombre del Medio"]||""),TipoMedio:String(row["Tipo de Medio"]||""),Sentimiento:String(row["Sentimiento"]||""),Alcance:Number(row["Alcance"]||0),Tier:String(row["Tier"]||""),Costo:costo,Link:String(row["Link de Nota"]||row["Link URL Medio"]||""),TipoNota:String(row["Tipo de Nota"]||""),Estado:String(row["Estado"]||"")})
             });
           }else if(isSocial){
             json.forEach((row,ri)=>{
@@ -404,7 +404,8 @@ REGLA ABSOLUTA — PROHIBIDO incluir CUALQUIERA de estos elementos:
 El sentimiento de cada mención es un DATO VERIFICADO. Preséntalo con seguridad y analiza las causas editoriales, NO cuestiones la clasificación.
 
 ═══ INSTRUCCIONES POR SECCIÓN ═══
-Genera JSON con estas claves. USA las URLs reales con formato [Ver fuente](URL).
+Genera JSON con estas claves.
+FORMATO DE CITAS OBLIGATORIO: Para citar fuentes usa EXACTAMENTE este formato: [Ver fuente](URL_COMPLETA). Ejemplo: [Ver fuente](https://ejemplo.com/nota123). NUNCA uses referencias como [M1], [S6], [M10]. SIEMPRE usa la URL completa real dentro del paréntesis.
 FORMATO DE NOMBRES: Usa triple asterisco ***solo*** para nombres de FUENTES (medios de comunicación y @usuarios de redes sociales que PUBLICARON el contenido). Ejemplo correcto: ***@usuario_real***, ***El Universal***, ***La Jornada***. NUNCA uses triple asterisco para nombres de personas, personajes, marcas, eventos o lugares mencionados DENTRO del contenido (como Tim Burton, Coca-Cola, etc). Esos nombres van en texto normal.
 
 "resumen" — ${AI_LENGTHS.resumen}. Separar párrafos con " || ". Estructura:
@@ -471,8 +472,16 @@ FORMATO: JSON válido sin markdown ni backticks. NO uses saltos de línea dentro
       }
       const tx:Record<string,string>={};
       const keys=["resumen","picos","picosRedes","picosMedios","sentimiento","tendSent","fuentes","hora","tier","top5med","tipoNota","estado","conclusiones","recomendaciones","topPub"];
-      keys.forEach(k=>{if(parsed[k]){const v=parsed[k];if(typeof v==="string")tx[k]=v;else if(Array.isArray(v))tx[k]=v.map(String).join(" || ");else tx[k]=JSON.stringify(v)}});
+      keys.forEach(k=>{if(parsed[k]){const v=parsed[k];if(typeof v==="string")tx[k]=v;else if(Array.isArray(v))tx[k]=v.map((item:unknown)=>{if(typeof item==="string")return item;if(item&&typeof item==="object"){const o=item as Record<string,unknown>;return Object.values(o).filter(x=>typeof x==="string").join(": ")}return JSON.stringify(item)}).join(" || ");else tx[k]=JSON.stringify(v)}});
       if(Array.isArray(parsed.temas))tx.temas=JSON.stringify(parsed.temas);
+      /* Post-process: convert [M1], [S6] style refs to [Ver fuente](url) */
+      const urlMap:Record<string,string>={};
+      topPos.forEach((r,i)=>{const url="Fuente" in r?(r as SocialRow).Link:(r as MediaRow).Link;if(url)urlMap["S"+(i+1)]=url;urlMap["M"+(i+1)]=url});
+      topNeg.forEach((r,i)=>{const idx=i+topPos.length;const url="Fuente" in r?(r as SocialRow).Link:(r as MediaRow).Link;if(url){urlMap["S"+(idx+1)]=url;urlMap["M"+(idx+1)]=url}});
+      allSoc.forEach((r,i)=>{if(r.Link)urlMap["S"+(i+1)]=r.Link});
+      allMed.forEach((r,i)=>{if(r.Link)urlMap["M"+(i+1)]=r.Link});
+      const fixRefs=(text:string)=>text.replace(/\[([SM]\d+)\]/g,(_,ref)=>{const url=urlMap[ref];return url?"[Ver fuente]("+url+")":"["+ref+"]"});
+      Object.keys(tx).forEach(k=>{if(typeof tx[k]==="string")tx[k]=fixRefs(tx[k])});
       setAiTexts(tx);setAiTextsByTab(p=>({...p,[tab]:tx}));setAiGenerated(true);
       const inputTk=result.inputTokens;const outputTk=result.outputTokens;
       const costUsd=(inputTk*0.0000001)+(outputTk*0.0000004);
