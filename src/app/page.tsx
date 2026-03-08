@@ -101,7 +101,7 @@ function processMedia(rows:MediaRow[]):PData{
   const fc=[...f];const t5ag=fc.sort((a,b)=>(b.Alcance||0)-(a.Alcance||0)).slice(0,5).map(r=>({nombre:r.Medio,valor:r.Alcance||0,link:r.Link||"",fuente:r.TipoMedio,titulo:r.Titulo||""}));
   const fc2=[...f];const t5cg=fc2.sort((a,b)=>(b.Costo||0)-(a.Costo||0)).slice(0,5).map(r=>({nombre:r.Medio,valor:r.Costo||0,link:r.Link||"",fuente:r.TipoMedio,titulo:r.Titulo||""}));
   const t5af:Record<string,Top5Item[]>={};const t5cf:Record<string,Top5Item[]>={};
-  VM.forEach(t=>{const sub=[...f.filter(r=>r.TipoMedio===t)];t5af[t]=sub.sort((a,b)=>(b.Alcance||0)-(a.Alcance||0)).slice(0,5).map(r=>({nombre:r.Medio,valor:r.Alcance||0,link:r.Link||"",fuente:r.TipoMedio,titulo:r.Titulo||""}));const sub2=[...f.filter(r=>r.TipoMedio===t)];t5cf[t]=sub2.sort((a,b)=>(b.Costo||0)-(a.Costo||0)).slice(0,5).map(r=>({nombre:r.Medio,valor:r.Costo||0,link:r.Link||"",fuente:r.TipoMedio,titulo:r.Titulo||""}))});
+  VM.forEach(t=>{const sub=[...f.filter(r=>r.TipoMedio===t)];t5af[t]=sub.sort((a,b)=>(b.Alcance||0)-(a.Alcance||0)).slice(0,5).filter(r=>(r.Alcance||0)>0).map(r=>({nombre:r.Medio,valor:r.Alcance||0,link:r.Link||"",fuente:r.TipoMedio,titulo:r.Titulo||""}));const sub2=[...f.filter(r=>r.TipoMedio===t)];t5cf[t]=sub2.sort((a,b)=>(b.Costo||0)-(a.Costo||0)).slice(0,5).filter(r=>(r.Costo||0)>0).map(r=>({nombre:r.Medio,valor:r.Costo||0,link:r.Link||"",fuente:r.TipoMedio,titulo:r.Titulo||""}))});
   const tm:Record<string,number>={};f.forEach(r=>{const t=r.Tier||"Sin Tier";tm[t]=(tm[t]||0)+1});
   const tierOrder=["Tier 1","Tier 2","Tier 3"];const tierD=tierOrder.filter(t=>tm[t]).map(t=>({name:t,value:tm[t]||0}));Object.entries(tm).forEach(([k,v])=>{if(!tierOrder.includes(k))tierD.push({name:k,value:v})});
   const tnm:Record<string,number>={};f.forEach(r=>{const t=r.TipoNota||"Sin tipo";tnm[t]=(tnm[t]||0)+1});
@@ -163,7 +163,7 @@ function parseExcel(file:File):Promise<{social:SocialRow[];media:MediaRow[]}>{
               if(typeof mf==="number"){const dd=XLSX.SSF.parse_date_code(mf);mfs=dd.y+"-"+String(dd.m).padStart(2,"0")+"-"+String(dd.d).padStart(2,"0")}else if(mf instanceof Date){mfs=mf.toISOString().substring(0,10)}else{mfs=String(mf||"").substring(0,10)}
               let costo=parseNum(row["Costo"]);
               if(costo===0){const ref=XLSX.utils.encode_cell({r:json.indexOf(row)+1,c:17});const cell=ws[ref];if(cell)costo=parseNum(cell.v)}
-              media.push({Titulo:String(row["Titulo"]||row["Título"]||""),Texto:String(row["Texto"]||""),Autor:String(row["Autor"]||""),Fecha:mfs,Medio:String(row["Nombre del Medio"]||""),TipoMedio:String(row["Tipo de Medio"]||""),Sentimiento:String(row["Sentimiento"]||""),Alcance:Number(row["Alcance"]||0),Tier:String(row["Tier"]||""),Costo:costo,Link:String(row["Link de Nota"]||row["Link URL Medio"]||""),TipoNota:String(row["Tipo de Nota"]||""),Estado:String(row["Estado"]||"")})
+              media.push({Titulo:String(row["Titulo"]||row["Título"]||""),Texto:String(row["Texto"]||""),Autor:String(row["Autor"]||""),Fecha:mfs,Medio:String(row["Nombre del Medio"]||"").trim(),TipoMedio:String(row["Tipo de Medio"]||"").trim(),Sentimiento:String(row["Sentimiento"]||"").trim(),Alcance:Number(row["Alcance"]||0),Tier:String(row["Tier"]||"").trim(),Costo:costo,Link:String(row["Link de Nota"]||row["Link URL Medio"]||""),TipoNota:String(row["Tipo de Nota"]||"").trim(),Estado:String(row["Estado"]||"").trim()})
             });
           }else if(isSocial){
             json.forEach((row,ri)=>{
@@ -290,6 +290,9 @@ const MED_SECS=["Indicadores Clave por Tipo de Medio","Distribución por Tipo de
 const FUS_SECS=["Indicadores Clave","Distribución por Fuente","Resumen Ejecutivo","Temas Clave Destacados","Tráfico de Información","Tráfico Redes Sociales","Tráfico Medios Tradicionales","Actividad por Hora","Indicadores de Sentimiento","Análisis de Sentimiento","Tendencia del Sentimiento","Menciones Populares por Sentimiento","Distribución de Notas por Tier","Top 5 Medios con Más Noticias","Distribución por Tipo de Nota","Distribución por Estado","Top Publicaciones","Conclusiones","Recomendaciones Estratégicas"];
 
 /* ═══════ MAIN ═══════ */
+/* PptxGenJS CDN types */
+interface PptxSlide{background:{fill:string};addText(t:string,o:Record<string,unknown>):void;addShape(t:string,o:Record<string,unknown>):void}
+interface PptxGen{layout:string;addSlide():PptxSlide;writeFile(o:{fileName:string}):void}
 const AI_LENGTHS={resumen:"3-4 párrafos",sentimiento:"2-3 párrafos",temas:"3-5 insights",conclusiones:"2-3 párrafos",recomendaciones:"4-5 recomendaciones",picos:"2-3 párrafos",tendSent:"2-3 párrafos"};
 export default function Home(){
   const[view,setView]=useState("home");
@@ -491,6 +494,108 @@ FORMATO: JSON válido sin markdown ni backticks. NO uses saltos de línea dentro
     setAiLoading(false);
   },[geminiKey,pd,promptConfig,callGemini,tab]);
   const[showExport,setShowExport]=useState(false);
+  const[exportLoading,setExportLoading]=useState("");
+  const reportContainerRef=useRef<HTMLDivElement>(null);
+
+  /* ═══ EXPORT: WORD (HTML-based, zero dependencies) ═══ */
+  const exportDOCX=()=>{
+    if(!pd)return;
+    setShowExport(false);setExportLoading("word");
+    try{
+      const css=`<style>body{font-family:Arial,sans-serif;font-size:12pt;color:#333;max-width:700px;margin:0 auto}h1{color:${brand.primaryColor};font-size:22pt;margin-top:24pt}h2{color:${brand.primaryColor};font-size:16pt;margin-top:18pt;border-bottom:2px solid ${brand.accentColor};padding-bottom:4pt}h3{font-size:13pt;color:#555}p{line-height:1.6;margin-bottom:8pt}.kpi{display:inline-block;background:#f0f4f8;padding:8pt 16pt;margin:4pt 8pt 4pt 0;border-radius:6pt;text-align:center}.kpi-val{font-size:20pt;font-weight:bold;color:${brand.primaryColor}}.kpi-label{font-size:9pt;color:#94a3b8}.ai-block{background:#f0f9ff;border-left:4px solid ${brand.accentColor};padding:12pt 16pt;margin:12pt 0;border-radius:0 8pt 8pt 0}.source-link{color:${brand.accentColor};font-weight:bold;font-size:9pt}table{border-collapse:collapse;width:100%;margin:8pt 0}td,th{border:1px solid #e2e8f0;padding:6pt 10pt;font-size:10pt;text-align:left}th{background:#f8fafc;font-weight:bold;color:#475569}</style>`;
+      const cover=`<div style="text-align:center;padding:60pt 0;background:linear-gradient(135deg,${brand.bannerPrimary},${brand.bannerSecondary});color:${brand.titleTextColor};border-radius:8pt;margin-bottom:24pt"><p style="font-size:10pt;opacity:0.6;letter-spacing:2pt">${reportTitle||"REPORTE DE MONITOREO"}</p><h1 style="font-size:28pt;color:${brand.titleTextColor};margin:8pt 0">${reportSubject||"Sujeto Monitoreado"}</h1><p style="opacity:0.7">${reportPeriod||""}</p><p style="font-size:9pt;opacity:0.5;margin-top:12pt">${pd.totalMenciones} menciones | ${pd.dataType==="social"?"Redes Sociales":pd.dataType==="media"?"Medios":"Medios + Redes"}</p></div>`;
+      const kpiArr=[["Menciones",String(pd.totalMenciones)],["Alcance",fmt(pd.totalAlcance)],["Sent. Neto",pd.sentNeto.toFixed(1)+"%"],...(pd.totalCosto>0?[["Costo/AVE",fmtM(pd.totalCosto)]]:[])];
+      const kpis="<h2>Indicadores Clave</h2><div>"+kpiArr.map(([l,v])=>'<div class="kpi"><div class="kpi-val">'+v+'</div><div class="kpi-label">'+l+'</div></div>').join("")+"</div>";
+      /* AI sections */
+      const renderAI=(key:string,title:string)=>{const text=aiTexts[key];if(!text)return"";const clean=(typeof text==="string"?text:String(text)).replace(/\*\*\*([^*]+)\*\*\*/g,"<b><i>$1</i></b>").replace(/\*\*([^*]+)\*\*/g,"<b>$1</b>").replace(/\[Ver fuente\]\(([^)]+)\)/g,'<a href="$1" class="source-link"> Ver fuente</a>');const paras=clean.split(/\s*\|\|\s*/).filter(Boolean).map(p=>"<p>"+p+"</p>").join("");return"<h2>"+title+"</h2><div class='ai-block'>"+paras+"</div>"};
+      const aiContent=[
+        renderAI("resumen","Resumen Ejecutivo"),renderAI("temas","Temas Clave Destacados"),
+        renderAI("picos","Tráfico de Información"),renderAI("sentimiento","Análisis de Sentimiento"),
+        renderAI("tendSent","Tendencia del Sentimiento"),renderAI("conclusiones","Conclusiones"),
+        renderAI("recomendaciones","Recomendaciones Estratégicas")
+      ].filter(Boolean).join("");
+      /* Top Publicaciones */
+      let topHtml="";
+      if(pd.top5AlcGeneral.length>0){
+        topHtml+="<h2>Top Publicaciones por Alcance</h2><table><tr><th>#</th><th>Nombre</th><th>Alcance</th></tr>";
+        pd.top5AlcGeneral.forEach((item,i)=>{topHtml+="<tr><td>"+(i+1)+"</td><td>"+item.nombre+(item.titulo?" — "+item.titulo:"")+"</td><td>"+fmt(item.valor)+"</td></tr>"});
+        topHtml+="</table>";
+      }
+      /* Sentiment distribution */
+      const pP=pd.totalMenciones>0?((pd.sentCounts.Positivo/pd.totalMenciones)*100).toFixed(1):"0";const pN=pd.totalMenciones>0?((pd.sentCounts.Negativo/pd.totalMenciones)*100).toFixed(1):"0";const pU=pd.totalMenciones>0?((pd.sentCounts.Neutro/pd.totalMenciones)*100).toFixed(1):"0";
+      const sentHtml="<h2>Distribución de Sentimiento</h2><table><tr><th>Sentimiento</th><th>Cantidad</th><th>%</th></tr><tr><td>Positivo</td><td>"+pd.sentCounts.Positivo+"</td><td>"+pP+"%</td></tr><tr><td>Negativo</td><td>"+pd.sentCounts.Negativo+"</td><td>"+pN+"%</td></tr><tr><td>Neutro</td><td>"+pd.sentCounts.Neutro+"</td><td>"+pU+"%</td></tr></table>";
+      const html='<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word" xmlns="http://www.w3.org/TR/REC-html40"><head><meta charset="UTF-8">'+css+'</head><body>'+cover+kpis+sentHtml+aiContent+topHtml+'<p style="text-align:center;margin-top:40pt;color:#94a3b8;font-size:9pt">Generado por ReporteaJDOR</p></body></html>';
+      const blob=new Blob(["\ufeff"+html],{type:"application/msword"});
+      const url=URL.createObjectURL(blob);const a=document.createElement("a");a.href=url;a.download=(reportSubject||"reporte")+".doc";a.click();URL.revokeObjectURL(url);
+    }catch(e){console.error("DOCX export error:",e);alert("Error al exportar Word")}
+    setExportLoading("");
+  };
+
+  /* ═══ EXPORT: PDF (html2canvas + jsPDF) ═══ */
+  const exportPDF=async()=>{
+    if(!reportContainerRef.current)return;
+    setShowExport(false);setExportLoading("pdf");
+    const el=reportContainerRef.current;
+    try{
+      const html2canvas=(await import("html2canvas")).default;
+      const{jsPDF}=await import("jspdf");
+      const canvas=await html2canvas(el,{scale:2,useCORS:true,logging:false,windowWidth:960});
+      const imgData=canvas.toDataURL("image/jpeg",0.92);
+      const pdfW=210;const pdfH=297;
+      const imgW=pdfW-20;const imgH=(canvas.height*imgW)/canvas.width;
+      const pdf=new jsPDF("p","mm","a4");
+      let y=10;let page=0;const pageH=pdfH-20;
+      while(y<imgH+10){if(page>0)pdf.addPage();pdf.addImage(imgData,"JPEG",10,-y+10,imgW,imgH);y+=pageH;page++}
+      pdf.save((reportSubject||"reporte")+".pdf");
+    }catch(e){console.error("PDF export error:",e);alert("Para exportar PDF instala: npm install html2canvas jspdf")}
+    setExportLoading("");
+  };
+
+  /* ═══ EXPORT: PPTX (CDN loaded) ═══ */
+  const exportPPTX=async()=>{
+    if(!pd)return;
+    setShowExport(false);setExportLoading("ppt");
+    try{
+      /* Load from CDN */
+      let Pptx=(window as unknown as Record<string,unknown>).PptxGenJS as (new()=>PptxGen)|undefined;
+      if(!Pptx){await new Promise<void>((resolve,reject)=>{const s=document.createElement("script");s.src="https://cdn.jsdelivr.net/npm/pptxgenjs@3.12.0/dist/pptxgen.bundle.js";s.onload=()=>resolve();s.onerror=()=>reject(new Error("CDN error"));document.head.appendChild(s)});Pptx=(window as unknown as Record<string,unknown>).PptxGenJS as new()=>PptxGen}
+      if(!Pptx)throw new Error("PptxGenJS not loaded");
+      const pptx=new Pptx();
+      pptx.layout="LAYOUT_WIDE";
+      const pc=brand.bannerPrimary.replace("#","")||"1a1a2e";
+      const ac=brand.accentColor.replace("#","")||"0f3460";
+      /* Slide 1: Cover */
+      const s1=pptx.addSlide();s1.background={fill:pc};
+      s1.addText(reportTitle||"Reporte de Monitoreo",{x:0.8,y:1,w:"90%",fontSize:14,color:"FFFFFF",fontFace:"Arial"});
+      s1.addText(reportSubject||"Sujeto Monitoreado",{x:0.8,y:2,w:"90%",fontSize:36,bold:true,color:"FFFFFF",fontFace:"Arial"});
+      s1.addText(reportPeriod||"",{x:0.8,y:3.3,w:"90%",fontSize:14,color:"FFFFFF",fontFace:"Arial"});
+      s1.addText(pd.totalMenciones+" menciones | "+(pd.dataType==="social"?"Redes Sociales":pd.dataType==="media"?"Medios":"Medios + Redes"),{x:0.8,y:4.2,w:"90%",fontSize:12,color:"FFFFFF",fontFace:"Arial"});
+      /* Slide 2: KPIs */
+      const s2=pptx.addSlide();
+      s2.addText("Indicadores Clave",{x:0.5,y:0.3,w:"90%",fontSize:24,bold:true,color:pc,fontFace:"Arial"});
+      const kpis=[{l:"Menciones",v:String(pd.totalMenciones)},{l:"Alcance",v:fmt(pd.totalAlcance)},{l:"Sent. Neto",v:pd.sentNeto.toFixed(1)+"%"}];
+      if(pd.totalCosto>0)kpis.push({l:"Costo/AVE",v:fmtM(pd.totalCosto)});
+      kpis.forEach((k,i)=>{const x=0.5+i*2.8;s2.addShape("rect",{x,y:1.2,w:2.5,h:1.5,fill:{color:"F0F4F8"},rectRadius:0.15});s2.addText(k.v,{x,y:1.4,w:2.5,fontSize:28,bold:true,color:pc,fontFace:"Arial",align:"center"});s2.addText(k.l,{x,y:2.2,w:2.5,fontSize:11,color:"94A3B8",fontFace:"Arial",align:"center"})});
+      /* AI sections */
+      const aiSecs=[{t:"Resumen Ejecutivo",k:"resumen"},{t:"Temas Clave",k:"temas"},{t:"Análisis de Sentimiento",k:"sentimiento"},{t:"Tráfico de Información",k:"picos"},{t:"Conclusiones",k:"conclusiones"},{t:"Recomendaciones",k:"recomendaciones"}];
+      for(const sec of aiSecs){
+        let text=aiTexts[sec.k];if(!text)continue;
+        if(typeof text!=="string")text=String(text);
+        const clean=text.replace(/\*\*\*([^*]+)\*\*\*/g,"$1").replace(/\*\*([^*]+)\*\*/g,"$1").replace(/\[Ver fuente\]\([^)]+\)/g,"").replace(/\s*\|\|\s*/g,"\n\n");
+        const sl=pptx.addSlide();
+        sl.addText(sec.t,{x:0.5,y:0.3,w:"90%",fontSize:22,bold:true,color:pc,fontFace:"Arial"});
+        sl.addShape("rect",{x:0.5,y:0.7,w:1.5,h:0.05,fill:{color:ac}});
+        sl.addText(clean.substring(0,1800),{x:0.5,y:1,w:12,h:5.5,fontSize:12,color:"333333",fontFace:"Arial",valign:"top",paraSpaceAfter:8});
+      }
+      /* Final slide */
+      const sf=pptx.addSlide();sf.background={fill:pc};
+      sf.addText("Gracias",{x:0,y:2,w:"100%",fontSize:44,bold:true,color:"FFFFFF",fontFace:"Arial",align:"center"});
+      sf.addText(reportSubject||"",{x:0,y:3.2,w:"100%",fontSize:16,color:"FFFFFF",fontFace:"Arial",align:"center"});
+      pptx.writeFile({fileName:(reportSubject||"reporte")+".pptx"});
+    }catch(e){console.error("PPTX export error:",e);alert("Error al exportar PowerPoint: "+String(e))}
+    setExportLoading("");
+  };
+
   const[uploadStatus,setUploadStatus]=useState("");
   const[sData,setSData]=useState<SocialRow[]>([]);
   const[mData,setMData]=useState<MediaRow[]>([]);
@@ -587,12 +692,12 @@ FORMATO: JSON válido sin markdown ni backticks. NO uses saltos de línea dentro
                 <button onClick={generateAllAI} disabled={!geminiKey||aiLoading} className="flex items-center gap-1.5 px-4 py-1.5 rounded-lg cursor-pointer text-xs font-semibold text-white border-none disabled:opacity-40" style={{background:aiLoading?"#94a3b8":"linear-gradient(135deg,#8b5cf6,#7c3aed)"}}>{aiLoading?<><RefreshCw size={12} className="animate-spin"/> Generando...</>:<><Zap size={12}/> Generar análisis</>}</button>
                 {aiGenerated&&<span className="text-[10px] text-green-600 font-semibold flex items-center gap-1"><Check size={12}/>IA generada</span>}
                 {aiUsage&&<div className="flex items-center gap-3 text-[10px] text-gray-400 bg-gray-50 px-3 py-1.5 rounded-lg"><span>Entrada: ~{aiUsage.input.toLocaleString()} tokens</span><span>Salida: ~{aiUsage.output.toLocaleString()} tokens</span><span className="font-semibold text-gray-600">Costo est: ${aiUsage.cost<0.01?"<$0.01 MXN":("$"+aiUsage.cost.toFixed(2)+" MXN")}</span></div>}
-                <button onClick={()=>setShowExport(!showExport)} className="flex items-center gap-1.5 px-4 py-1.5 border-none rounded-lg cursor-pointer text-xs font-semibold text-white" style={{background:"linear-gradient(135deg,#3b82f6,#2563eb)"}}><Download size={12}/> Exportar</button>
-                {showExport&&<div className="absolute top-full right-0 mt-1 bg-white rounded-xl shadow-xl border border-gray-100 overflow-hidden min-w-[140px] z-20">{["PDF","Word","PPT"].map(ff=><button key={ff} onClick={()=>{setShowExport(false);alert(ff+" - Siguiente fase")}} className="w-full px-3 py-2 border-none bg-transparent cursor-pointer text-left hover:bg-gray-50 text-sm text-gray-700">{ff}</button>)}</div>}
+                <button onClick={()=>setShowExport(!showExport)} className="flex items-center gap-1.5 px-4 py-1.5 border-none rounded-lg cursor-pointer text-xs font-semibold text-white" style={{background:"linear-gradient(135deg,#3b82f6,#2563eb)"}}>{exportLoading?<><RefreshCw size={12} className="animate-spin"/> Exportando...</>:<><Download size={12}/> Exportar</>}</button>
+                {showExport&&<div className="absolute top-full right-0 mt-1 bg-white rounded-xl shadow-xl border border-gray-100 overflow-hidden min-w-[160px] z-20"><button onClick={exportPDF} className="w-full px-4 py-2.5 border-none bg-transparent cursor-pointer text-left hover:bg-red-50 text-sm text-gray-700 flex items-center gap-2"><span className="w-5 h-5 rounded bg-red-500 text-white text-[10px] font-bold flex items-center justify-center">P</span>PDF</button><button onClick={exportDOCX} className="w-full px-4 py-2.5 border-none bg-transparent cursor-pointer text-left hover:bg-blue-50 text-sm text-gray-700 flex items-center gap-2"><span className="w-5 h-5 rounded bg-blue-600 text-white text-[10px] font-bold flex items-center justify-center">W</span>Word</button><button onClick={exportPPTX} className="w-full px-4 py-2.5 border-none bg-transparent cursor-pointer text-left hover:bg-orange-50 text-sm text-gray-700 flex items-center gap-2"><span className="w-5 h-5 rounded bg-orange-500 text-white text-[10px] font-bold flex items-center justify-center">P</span>PowerPoint</button></div>}
               </div>
             </div>
             {showChecklist&&<div className="max-w-[940px] mx-auto px-7 py-4"><div className="bg-white rounded-xl p-5 border border-gray-100 shadow-lg"><div className="flex justify-between items-center mb-3"><div className="text-sm font-bold text-gray-700">Módulos activos</div><div className="text-[10px] text-gray-400">Arrastra para reordenar</div></div><div className="grid gap-1">{curOrder.map((s,i)=>(<div key={s} draggable onDragStart={()=>handleDragStart(i)} onDragOver={(e)=>handleDragOver(e,i)} onDragEnd={handleDragEnd} className="flex items-center gap-2 px-3 py-2 rounded-lg border border-gray-100 bg-gray-50/50 cursor-grab active:cursor-grabbing hover:bg-blue-50 transition-colors select-none"><div className="text-gray-300 flex-shrink-0"><svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><circle cx="8" cy="4" r="2"/><circle cx="16" cy="4" r="2"/><circle cx="8" cy="12" r="2"/><circle cx="16" cy="12" r="2"/><circle cx="8" cy="20" r="2"/><circle cx="16" cy="20" r="2"/></svg></div><span className="text-[11px] text-gray-500 font-mono w-5">{curEnabled[s]!==false?String(curOrder.filter((_,j)=>j<=i&&curEnabled[_]!==false).length):""}</span><input type="checkbox" checked={curEnabled[s]!==false} onChange={()=>toggleSec(s)} className="accent-blue-500" onClick={e=>e.stopPropagation()}/><span className="text-xs text-gray-700 flex-1">{s}</span></div>))}</div></div></div>}
-            <div className="max-w-[940px] mx-auto p-7 pb-20 grid gap-5 overflow-hidden">
+            <div ref={reportContainerRef} className="max-w-[940px] mx-auto p-7 pb-20 grid gap-5 overflow-hidden">
               {/* Cover */}
               <style>{`@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;700&family=Inter:wght@400;600;700&family=Lato:wght@400;700&family=Merriweather:wght@400;700&family=Montserrat:wght@400;600;700&family=Nunito:wght@400;700&family=Outfit:wght@400;600;700;800&family=Playfair+Display:wght@400;700&family=Poppins:wght@400;600;700&family=Raleway:wght@400;600;700&family=Roboto:wght@400;700&family=Source+Sans+3:wght@400;600;700&display=swap');`}</style>
               <div className="rounded-2xl p-10 relative overflow-hidden" style={{background:"linear-gradient(135deg,"+brand.bannerPrimary+","+brand.bannerSecondary+")"}}>
