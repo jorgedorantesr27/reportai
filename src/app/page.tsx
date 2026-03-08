@@ -498,89 +498,102 @@ FORMATO: JSON válido sin markdown ni backticks. NO uses saltos de línea dentro
   const reportContainerRef=useRef<HTMLDivElement>(null);
 
   /* ═══ EXPORT: WORD (HTML-based, zero dependencies) ═══ */
+  /* ═══ EXPORT HELPER: capture report HTML with inline styles ═══ */
+  const captureReportHTML=():string=>{
+    const el=reportContainerRef.current;if(!el)return"";
+    const clone=el.cloneNode(true) as HTMLElement;
+    /* Remove interactive buttons, loading indicators */
+    clone.querySelectorAll("button,input,.animate-spin").forEach(e=>e.remove());
+    /* Inline computed styles for key elements */
+    const src=el.querySelectorAll("*");const dst=clone.querySelectorAll("*");
+    src.forEach((s,i)=>{if(!dst[i])return;const cs=window.getComputedStyle(s);const important=["color","background-color","background","font-size","font-weight","font-family","font-style","border","border-radius","padding","margin","display","flex-direction","gap","align-items","justify-content","text-align","width","max-width","min-width","line-height","letter-spacing","opacity","border-left","border-bottom","box-shadow","grid-template-columns"];
+    let style="";important.forEach(p=>{const v=cs.getPropertyValue(p);if(v&&v!=="none"&&v!=="normal"&&v!=="0px"&&v!=="rgba(0, 0, 0, 0)")style+=p+":"+v+";"});
+    (dst[i] as HTMLElement).setAttribute("style",style)});
+    /* Fix SVG/canvas charts - convert to images */
+    const svgs=clone.querySelectorAll("svg");
+    svgs.forEach(svg=>{try{const data=new XMLSerializer().serializeToString(svg);const img=document.createElement("img");img.src="data:image/svg+xml;base64,"+btoa(unescape(encodeURIComponent(data)));img.style.cssText="width:100%;max-width:"+svg.getAttribute("width")+"px;height:auto";svg.parentNode?.replaceChild(img,svg)}catch(e){console.warn(e)}});
+    return clone.innerHTML;
+  };
+
+  /* ═══ EXPORT: WORD ═══ */
   const exportDOCX=()=>{
-    if(!pd)return;
+    if(!pd||!reportContainerRef.current)return;
     setShowExport(false);setExportLoading("word");
     try{
-      const css=`<style>body{font-family:Arial,sans-serif;font-size:12pt;color:#333;max-width:700px;margin:0 auto}h1{color:${brand.primaryColor};font-size:22pt;margin-top:24pt}h2{color:${brand.primaryColor};font-size:16pt;margin-top:18pt;border-bottom:2px solid ${brand.accentColor};padding-bottom:4pt}h3{font-size:13pt;color:#555}p{line-height:1.6;margin-bottom:8pt}.kpi{display:inline-block;background:#f0f4f8;padding:8pt 16pt;margin:4pt 8pt 4pt 0;border-radius:6pt;text-align:center}.kpi-val{font-size:20pt;font-weight:bold;color:${brand.primaryColor}}.kpi-label{font-size:9pt;color:#94a3b8}.ai-block{background:#f0f9ff;border-left:4px solid ${brand.accentColor};padding:12pt 16pt;margin:12pt 0;border-radius:0 8pt 8pt 0}.source-link{color:${brand.accentColor};font-weight:bold;font-size:9pt}table{border-collapse:collapse;width:100%;margin:8pt 0}td,th{border:1px solid #e2e8f0;padding:6pt 10pt;font-size:10pt;text-align:left}th{background:#f8fafc;font-weight:bold;color:#475569}</style>`;
-      const cover=`<div style="text-align:center;padding:60pt 0;background:linear-gradient(135deg,${brand.bannerPrimary},${brand.bannerSecondary});color:${brand.titleTextColor};border-radius:8pt;margin-bottom:24pt"><p style="font-size:10pt;opacity:0.6;letter-spacing:2pt">${reportTitle||"REPORTE DE MONITOREO"}</p><h1 style="font-size:28pt;color:${brand.titleTextColor};margin:8pt 0">${reportSubject||"Sujeto Monitoreado"}</h1><p style="opacity:0.7">${reportPeriod||""}</p><p style="font-size:9pt;opacity:0.5;margin-top:12pt">${pd.totalMenciones} menciones | ${pd.dataType==="social"?"Redes Sociales":pd.dataType==="media"?"Medios":"Medios + Redes"}</p></div>`;
-      const kpiArr=[["Menciones",String(pd.totalMenciones)],["Alcance",fmt(pd.totalAlcance)],["Sent. Neto",pd.sentNeto.toFixed(1)+"%"],...(pd.totalCosto>0?[["Costo/AVE",fmtM(pd.totalCosto)]]:[])];
-      const kpis="<h2>Indicadores Clave</h2><div>"+kpiArr.map(([l,v])=>'<div class="kpi"><div class="kpi-val">'+v+'</div><div class="kpi-label">'+l+'</div></div>').join("")+"</div>";
-      /* AI sections */
-      const renderAI=(key:string,title:string)=>{const text=aiTexts[key];if(!text)return"";const clean=(typeof text==="string"?text:String(text)).replace(/\*\*\*([^*]+)\*\*\*/g,"<b><i>$1</i></b>").replace(/\*\*([^*]+)\*\*/g,"<b>$1</b>").replace(/\[Ver fuente\]\(([^)]+)\)/g,'<a href="$1" class="source-link"> Ver fuente</a>');const paras=clean.split(/\s*\|\|\s*/).filter(Boolean).map(p=>"<p>"+p+"</p>").join("");return"<h2>"+title+"</h2><div class='ai-block'>"+paras+"</div>"};
-      const aiContent=[
-        renderAI("resumen","Resumen Ejecutivo"),renderAI("temas","Temas Clave Destacados"),
-        renderAI("picos","Tráfico de Información"),renderAI("sentimiento","Análisis de Sentimiento"),
-        renderAI("tendSent","Tendencia del Sentimiento"),renderAI("conclusiones","Conclusiones"),
-        renderAI("recomendaciones","Recomendaciones Estratégicas")
-      ].filter(Boolean).join("");
-      /* Top Publicaciones */
-      let topHtml="";
-      if(pd.top5AlcGeneral.length>0){
-        topHtml+="<h2>Top Publicaciones por Alcance</h2><table><tr><th>#</th><th>Nombre</th><th>Alcance</th></tr>";
-        pd.top5AlcGeneral.forEach((item,i)=>{topHtml+="<tr><td>"+(i+1)+"</td><td>"+item.nombre+(item.titulo?" — "+item.titulo:"")+"</td><td>"+fmt(item.valor)+"</td></tr>"});
-        topHtml+="</table>";
-      }
-      /* Sentiment distribution */
-      const pP=pd.totalMenciones>0?((pd.sentCounts.Positivo/pd.totalMenciones)*100).toFixed(1):"0";const pN=pd.totalMenciones>0?((pd.sentCounts.Negativo/pd.totalMenciones)*100).toFixed(1):"0";const pU=pd.totalMenciones>0?((pd.sentCounts.Neutro/pd.totalMenciones)*100).toFixed(1):"0";
-      const sentHtml="<h2>Distribución de Sentimiento</h2><table><tr><th>Sentimiento</th><th>Cantidad</th><th>%</th></tr><tr><td>Positivo</td><td>"+pd.sentCounts.Positivo+"</td><td>"+pP+"%</td></tr><tr><td>Negativo</td><td>"+pd.sentCounts.Negativo+"</td><td>"+pN+"%</td></tr><tr><td>Neutro</td><td>"+pd.sentCounts.Neutro+"</td><td>"+pU+"%</td></tr></table>";
-      const html='<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word" xmlns="http://www.w3.org/TR/REC-html40"><head><meta charset="UTF-8">'+css+'</head><body>'+cover+kpis+sentHtml+aiContent+topHtml+'<p style="text-align:center;margin-top:40pt;color:#94a3b8;font-size:9pt">Generado por ReporteaJDOR</p></body></html>';
+      const content=captureReportHTML();
+      const html='<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word" xmlns="http://www.w3.org/TR/REC-html40"><head><meta charset="UTF-8"><style>@page{size:A4;margin:1.5cm}body{font-family:Arial,Helvetica,sans-serif;font-size:11pt;color:#333;line-height:1.5}img{max-width:100%!important;height:auto!important}table{border-collapse:collapse;page-break-inside:avoid}td,th{vertical-align:top}</style></head><body>'+content+'<br/><p style="text-align:center;color:#94a3b8;font-size:8pt;margin-top:20pt">Generado por ReporteaJDOR</p></body></html>';
       const blob=new Blob(["\ufeff"+html],{type:"application/msword"});
-      const url=URL.createObjectURL(blob);const a=document.createElement("a");a.href=url;a.download=(reportSubject||"reporte")+".doc";a.click();URL.revokeObjectURL(url);
-    }catch(e){console.error("DOCX export error:",e);alert("Error al exportar Word")}
+      const url=URL.createObjectURL(blob);const a=document.createElement("a");a.href=url;a.download=(reportSubject||"reporte")+".doc";document.body.appendChild(a);a.click();document.body.removeChild(a);URL.revokeObjectURL(url);
+    }catch(e){console.error("DOCX export error:",e);alert("Error al exportar Word: "+String(e))}
     setExportLoading("");
   };
 
-  /* ═══ EXPORT: PDF (html2canvas + jsPDF) ═══ */
+  /* ═══ EXPORT: PDF (section by section to avoid cuts) ═══ */
   const exportPDF=async()=>{
     if(!reportContainerRef.current)return;
     setShowExport(false);setExportLoading("pdf");
-    const el=reportContainerRef.current;
     try{
       const html2canvas=(await import("html2canvas")).default;
       const{jsPDF}=await import("jspdf");
-      const canvas=await html2canvas(el,{scale:2,useCORS:true,logging:false,windowWidth:960});
-      const imgData=canvas.toDataURL("image/jpeg",0.92);
-      const pdfW=210;const pdfH=297;
-      const imgW=pdfW-20;const imgH=(canvas.height*imgW)/canvas.width;
+      const el=reportContainerRef.current;
+      const sections=el.querySelectorAll(":scope > div");
       const pdf=new jsPDF("p","mm","a4");
-      let y=10;let page=0;const pageH=pdfH-20;
-      while(y<imgH+10){if(page>0)pdf.addPage();pdf.addImage(imgData,"JPEG",10,-y+10,imgW,imgH);y+=pageH;page++}
+      const pdfW=210;const pdfH=297;const margin=8;const contentW=pdfW-margin*2;
+      let curY=margin;let firstPage=true;
+      for(let si=0;si<sections.length;si++){
+        const sec=sections[si] as HTMLElement;
+        const canvas=await html2canvas(sec,{scale:2,useCORS:true,logging:false,windowWidth:940,backgroundColor:"#ffffff"});
+        const imgW=contentW;const imgH=(canvas.height*imgW)/canvas.width;
+        /* If section doesn't fit on current page, add new page */
+        if(!firstPage&&curY+imgH>pdfH-margin){pdf.addPage();curY=margin}
+        /* If section is taller than a full page, scale it down or split */
+        if(imgH>pdfH-margin*2){
+          const scale=(pdfH-margin*2)/imgH;
+          const scaledW=imgW*scale;const scaledH=imgH*scale;
+          const xOff=(pdfW-scaledW)/2;
+          pdf.addImage(canvas.toDataURL("image/jpeg",0.92),"JPEG",xOff,curY,scaledW,scaledH);
+          curY+=scaledH+3;
+        }else{
+          pdf.addImage(canvas.toDataURL("image/jpeg",0.92),"JPEG",margin,curY,imgW,imgH);
+          curY+=imgH+3;
+        }
+        firstPage=false;
+        /* Check if next section needs new page */
+        if(curY>pdfH-margin-20){pdf.addPage();curY=margin}
+      }
       pdf.save((reportSubject||"reporte")+".pdf");
     }catch(e){console.error("PDF export error:",e);alert("Para exportar PDF instala: npm install html2canvas jspdf")}
     setExportLoading("");
   };
 
-  /* ═══ EXPORT: PPTX (CDN loaded) ═══ */
+  /* ═══ EXPORT: PPTX (CDN) ═══ */
   const exportPPTX=async()=>{
     if(!pd)return;
     setShowExport(false);setExportLoading("ppt");
     try{
-      /* Load from CDN */
       let Pptx=(window as unknown as Record<string,unknown>).PptxGenJS as (new()=>PptxGen)|undefined;
       if(!Pptx){await new Promise<void>((resolve,reject)=>{const s=document.createElement("script");s.src="https://cdn.jsdelivr.net/npm/pptxgenjs@3.12.0/dist/pptxgen.bundle.js";s.onload=()=>resolve();s.onerror=()=>reject(new Error("CDN error"));document.head.appendChild(s)});Pptx=(window as unknown as Record<string,unknown>).PptxGenJS as new()=>PptxGen}
       if(!Pptx)throw new Error("PptxGenJS not loaded");
       const pptx=new Pptx();
       pptx.layout="LAYOUT_WIDE";
-      const pc=brand.bannerPrimary.replace("#","")||"1a1a2e";
-      const ac=brand.accentColor.replace("#","")||"0f3460";
+      const pc=(brand.bannerPrimary||brand.primaryColor).replace("#","");
+      const ac=(brand.accentColor||"0f3460").replace("#","");
       /* Slide 1: Cover */
       const s1=pptx.addSlide();s1.background={fill:pc};
       s1.addText(reportTitle||"Reporte de Monitoreo",{x:0.8,y:1,w:"90%",fontSize:14,color:"FFFFFF",fontFace:"Arial"});
       s1.addText(reportSubject||"Sujeto Monitoreado",{x:0.8,y:2,w:"90%",fontSize:36,bold:true,color:"FFFFFF",fontFace:"Arial"});
       s1.addText(reportPeriod||"",{x:0.8,y:3.3,w:"90%",fontSize:14,color:"FFFFFF",fontFace:"Arial"});
-      s1.addText(pd.totalMenciones+" menciones | "+(pd.dataType==="social"?"Redes Sociales":pd.dataType==="media"?"Medios":"Medios + Redes"),{x:0.8,y:4.2,w:"90%",fontSize:12,color:"FFFFFF",fontFace:"Arial"});
+      s1.addText(pd.totalMenciones+" menciones",{x:0.8,y:4.2,w:"90%",fontSize:12,color:"FFFFFF",fontFace:"Arial"});
       /* Slide 2: KPIs */
       const s2=pptx.addSlide();
       s2.addText("Indicadores Clave",{x:0.5,y:0.3,w:"90%",fontSize:24,bold:true,color:pc,fontFace:"Arial"});
       const kpis=[{l:"Menciones",v:String(pd.totalMenciones)},{l:"Alcance",v:fmt(pd.totalAlcance)},{l:"Sent. Neto",v:pd.sentNeto.toFixed(1)+"%"}];
       if(pd.totalCosto>0)kpis.push({l:"Costo/AVE",v:fmtM(pd.totalCosto)});
       kpis.forEach((k,i)=>{const x=0.5+i*2.8;s2.addShape("rect",{x,y:1.2,w:2.5,h:1.5,fill:{color:"F0F4F8"},rectRadius:0.15});s2.addText(k.v,{x,y:1.4,w:2.5,fontSize:28,bold:true,color:pc,fontFace:"Arial",align:"center"});s2.addText(k.l,{x,y:2.2,w:2.5,fontSize:11,color:"94A3B8",fontFace:"Arial",align:"center"})});
-      /* AI sections */
+      /* AI section slides */
       const aiSecs=[{t:"Resumen Ejecutivo",k:"resumen"},{t:"Temas Clave",k:"temas"},{t:"Análisis de Sentimiento",k:"sentimiento"},{t:"Tráfico de Información",k:"picos"},{t:"Conclusiones",k:"conclusiones"},{t:"Recomendaciones",k:"recomendaciones"}];
       for(const sec of aiSecs){
-        let text=aiTexts[sec.k];if(!text)continue;
-        if(typeof text!=="string")text=String(text);
+        let text=aiTexts[sec.k];if(!text)continue;if(typeof text!=="string")text=String(text);
         const clean=text.replace(/\*\*\*([^*]+)\*\*\*/g,"$1").replace(/\*\*([^*]+)\*\*/g,"$1").replace(/\[Ver fuente\]\([^)]+\)/g,"").replace(/\s*\|\|\s*/g,"\n\n");
         const sl=pptx.addSlide();
         sl.addText(sec.t,{x:0.5,y:0.3,w:"90%",fontSize:22,bold:true,color:pc,fontFace:"Arial"});
@@ -590,7 +603,6 @@ FORMATO: JSON válido sin markdown ni backticks. NO uses saltos de línea dentro
       /* Final slide */
       const sf=pptx.addSlide();sf.background={fill:pc};
       sf.addText("Gracias",{x:0,y:2,w:"100%",fontSize:44,bold:true,color:"FFFFFF",fontFace:"Arial",align:"center"});
-      sf.addText(reportSubject||"",{x:0,y:3.2,w:"100%",fontSize:16,color:"FFFFFF",fontFace:"Arial",align:"center"});
       pptx.writeFile({fileName:(reportSubject||"reporte")+".pptx"});
     }catch(e){console.error("PPTX export error:",e);alert("Error al exportar PowerPoint: "+String(e))}
     setExportLoading("");
