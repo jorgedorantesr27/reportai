@@ -498,7 +498,7 @@ FORMATO: JSON válido sin markdown ni backticks. NO uses saltos de línea dentro
   const reportContainerRef=useRef<HTMLDivElement>(null);
 
   /* ═══ EXPORT: WORD (HTML-based, zero dependencies) ═══ */
-  /* ═══ EXPORT: WORD (.docx via docx library + html2canvas for charts) ═══ */
+  /* ═══ EXPORT: WORD (.docx) ═══ */
   const exportDOCX=async()=>{
     if(!pd||!reportContainerRef.current)return;
     setShowExport(false);setExportLoading("word");
@@ -506,119 +506,214 @@ FORMATO: JSON válido sin markdown ni backticks. NO uses saltos de línea dentro
       const html2canvas=(await import("html2canvas")).default;
       const docxLib=await import("docx");
       const{Document:DocxDoc,Packer,Paragraph,TextRun,ImageRun,HeadingLevel,AlignmentType,PageBreak,
-        ExternalHyperlink,PageOrientation}=docxLib;
+        ExternalHyperlink,PageOrientation,Table,TableRow,TableCell,WidthType,
+        ShadingType}=docxLib;
       const fileSaver=await import("file-saver");
       const saveAs=fileSaver.saveAs||fileSaver.default;
 
-      /* Capture each report section as image */
       const el=reportContainerRef.current;
-      const sectionEls=el.querySelectorAll(":scope > div");
-      const sectionImages:Uint8Array[]=[];
-      const sectionWidths:number[]=[];
-      const sectionHeights:number[]=[];
-      for(let i=0;i<sectionEls.length;i++){
-        const sec=sectionEls[i] as HTMLElement;
-        const canvas=await html2canvas(sec,{scale:2,useCORS:true,logging:false,windowWidth:940,backgroundColor:"#ffffff"});
+      const acHex=(brand.accentColor||"#0f3460").replace("#","");
+      const prHex=(brand.primaryColor||"#1a1a2e").replace("#","");
+
+      /* Helper: capture an element as PNG Uint8Array */
+      const captureEl=async(elem:HTMLElement):Promise<{data:Uint8Array;w:number;h:number}>=>{
+        const canvas=await html2canvas(elem,{scale:2,useCORS:true,logging:false,windowWidth:940,backgroundColor:"#ffffff"});
         const dataUrl=canvas.toDataURL("image/png");
         const bin=atob(dataUrl.split(",")[1]);
         const arr=new Uint8Array(bin.length);
         for(let j=0;j<bin.length;j++)arr[j]=bin.charCodeAt(j);
-        sectionImages.push(arr);
-        sectionWidths.push(canvas.width);
-        sectionHeights.push(canvas.height);
-      }
+        return{data:arr,w:canvas.width,h:canvas.height};
+      };
 
-      /* Build paragraphs */
-      const children:unknown[]=[];
-      const maxPx=680;/* landscape content width in pixels at 72dpi */
+      /* Helper: image paragraph scaled to max width */
+      const imgPara=(img:{data:Uint8Array;w:number;h:number},maxW=680)=>{
+        const ratio=img.h/img.w;const w=Math.min(maxW,680);const h=Math.round(w*ratio);
+        return new Paragraph({alignment:AlignmentType.CENTER,spacing:{after:100},
+          children:[new ImageRun({data:img.data,transformation:{width:w,height:h},type:"png"})]});
+      };
 
-      /* Cover image (first section = banner) */
-      if(sectionImages.length>0){
-        const ratio=sectionHeights[0]/sectionWidths[0];
-        const imgW=maxPx;
-        const imgH=Math.round(imgW*ratio);
-        children.push(new Paragraph({alignment:AlignmentType.CENTER,children:[
-          new ImageRun({data:sectionImages[0],transformation:{width:imgW,height:imgH},type:"png"})
-        ]}));
-      }
-
-      /* Each remaining section as image + editable AI text below */
-      const aiKeyMap:Record<string,{key:string;title:string}>={};
-      ["Resumen Ejecutivo","Temas Clave Destacados","Análisis de Sentimiento","Tendencia del Sentimiento",
-       "Tráfico de Información","Conclusiones","Recomendaciones Estratégicas","Actividad por Hora",
-       "Tráfico Redes Sociales","Tráfico Medios Tradicionales"].forEach(t=>{
-        const keyMap:Record<string,string>={"Resumen Ejecutivo":"resumen","Temas Clave Destacados":"temas",
-          "Análisis de Sentimiento":"sentimiento","Tendencia del Sentimiento":"tendSent",
-          "Tráfico de Información":"picos","Conclusiones":"conclusiones",
-          "Recomendaciones Estratégicas":"recomendaciones","Actividad por Hora":"hora",
-          "Tráfico Redes Sociales":"picosRedes","Tráfico Medios Tradicionales":"picosMedios"};
-        aiKeyMap[t]={key:keyMap[t]||"",title:t};
-      });
-
-      for(let i=1;i<sectionImages.length;i++){
-        /* Page break before each section */
-        children.push(new Paragraph({children:[new PageBreak()]}));
-        /* Section image */
-        const ratio=sectionHeights[i]/sectionWidths[i];
-        const imgW=maxPx;
-        const imgH=Math.round(imgW*ratio);
-        /* Cap height to 70% page height */
-        const maxH=Math.round(maxPx*0.7*(12240/13680));
-        const finalH=Math.min(imgH,maxH);
-        const finalW=imgH>maxH?Math.round(imgW*(finalH/imgH)):imgW;
-        children.push(new Paragraph({alignment:AlignmentType.CENTER,children:[
-          new ImageRun({data:sectionImages[i],transformation:{width:finalW,height:finalH},type:"png"})
-        ]}));
-      }
-
-      /* Appendix: Editable AI texts */
-      children.push(new Paragraph({children:[new PageBreak()]}));
-      children.push(new Paragraph({heading:HeadingLevel.HEADING_1,spacing:{after:200},
-        children:[new TextRun({text:"Anexo: Textos Editables del Análisis",bold:true,size:28,font:"Arial"})]}));
-      children.push(new Paragraph({spacing:{after:200},children:[new TextRun({
-        text:"A continuación se incluyen los textos de análisis en formato editable para su modificación.",
-        size:20,font:"Arial",color:"666666",italics:true})]}));
-
-      const aiSections=[
-        {t:"Resumen Ejecutivo",k:"resumen"},{t:"Temas Clave",k:"temas"},
-        {t:"Tráfico de Información",k:"picos"},{t:"Análisis de Sentimiento",k:"sentimiento"},
-        {t:"Tendencia del Sentimiento",k:"tendSent"},{t:"Conclusiones",k:"conclusiones"},
-        {t:"Recomendaciones Estratégicas",k:"recomendaciones"}
-      ];
-      for(const sec of aiSections){
-        let text=aiTexts[sec.k];if(!text)continue;
-        if(typeof text!=="string")text=String(text);
-        children.push(new Paragraph({heading:HeadingLevel.HEADING_2,spacing:{before:300,after:150},
-          children:[new TextRun({text:sec.t,bold:true,size:24,font:"Arial",color:(brand.primaryColor||"1a1a2e").replace("#","")})]}));
-        const paras=text.split(/\s*\|\|\s*/).filter(Boolean);
-        for(const p of paras){
-          /* Parse ***bold italic***, **bold**, [Ver fuente](url) */
-          const parts=p.split(/(\*\*\*[^*]+\*\*\*|\*\*[^*]+\*\*|\[Ver fuente\]\([^)]+\))/g);
-          const runs:unknown[]=[];
-          for(const part of parts){
-            if(!part)continue;
-            const biMatch=part.match(/^\*\*\*(.+)\*\*\*$/);
-            if(biMatch){runs.push(new TextRun({text:biMatch[1],bold:true,italics:true,size:21,font:"Arial",color:(brand.accentColor||"0f3460").replace("#","")}));continue}
-            const bMatch=part.match(/^\*\*(.+)\*\*$/);
-            if(bMatch){runs.push(new TextRun({text:bMatch[1],bold:true,size:21,font:"Arial"}));continue}
-            const linkMatch=part.match(/\[Ver fuente\]\(([^)]+)\)/);
-            if(linkMatch){runs.push(new ExternalHyperlink({children:[new TextRun({text:" Ver fuente ",style:"Hyperlink",size:18,font:"Arial"})],link:linkMatch[1]}));continue}
-            runs.push(new TextRun({text:part,size:21,font:"Arial"}));
-          }
-          children.push(new Paragraph({spacing:{after:120},children:runs as InstanceType<typeof TextRun>[]}));
+      /* Helper: parse AI text into runs with bold/italic/links */
+      const aiRuns=(text:string)=>{
+        if(!text)return[new TextRun({text:"",size:24,font:"Arial"})];
+        const clean=typeof text==="string"?text:String(text);
+        const parts=clean.split(/(\*\*\*[^*]+\*\*\*|\*\*[^*]+\*\*|\[Ver fuente\]\([^)]+\))/g);
+        const runs:(InstanceType<typeof TextRun>|InstanceType<typeof ExternalHyperlink>)[]=[];
+        for(const part of parts){
+          if(!part)continue;
+          const biM=part.match(/^\*\*\*(.+)\*\*\*$/);
+          if(biM){runs.push(new TextRun({text:biM[1],bold:true,italics:true,size:24,font:"Arial",color:acHex}));continue}
+          const bM=part.match(/^\*\*(.+)\*\*$/);
+          if(bM){runs.push(new TextRun({text:bM[1],bold:true,size:24,font:"Arial"}));continue}
+          const lM=part.match(/\[Ver fuente\]\(([^)]+)\)/);
+          if(lM){runs.push(new ExternalHyperlink({children:[new TextRun({text:" Ver fuente ",style:"Hyperlink",size:20,font:"Arial"})],link:lM[1]}));continue}
+          runs.push(new TextRun({text:part,size:24,font:"Arial"}));
         }
+        return runs;
+      };
+
+      /* Helper: section heading */
+      const heading=(text:string)=>new Paragraph({spacing:{before:240,after:120},
+        children:[new TextRun({text,bold:true,size:32,font:"Arial",color:prHex})]});
+
+      /* Helper: blank line */
+      const blank=()=>new Paragraph({spacing:{after:100},children:[new TextRun({text:"",size:24})]});
+
+      /* ─── BUILD DOCUMENT ─── */
+      const children:unknown[]=[];
+      const sections=el.querySelectorAll(":scope > div");
+
+      /* PAGE 1: Cover (banner) - centered */
+      if(sections.length>0){
+        const bannerImg=await captureEl(sections[0] as HTMLElement);
+        const ratio=bannerImg.h/bannerImg.w;const bW=660;const bH=Math.round(bW*ratio);
+        /* Add vertical spacing to center */
+        children.push(new Paragraph({spacing:{before:2400},children:[new TextRun("")]}));
+        children.push(new Paragraph({alignment:AlignmentType.CENTER,
+          children:[new ImageRun({data:bannerImg.data,transformation:{width:bW,height:bH},type:"png"})]}));
+        children.push(new Paragraph({children:[new PageBreak()]}));
+      }
+
+      /* PAGE 2+: KPIs section as image */
+      if(sections.length>1){
+        const kpiImg=await captureEl(sections[1] as HTMLElement);
+        children.push(imgPara(kpiImg));
+        children.push(blank());
+      }
+
+      /* REMAINING SECTIONS: chart as image + text */
+      const secMap=new Map<string,{el:HTMLElement;idx:number}>();
+      for(let i=2;i<sections.length;i++){
+        const sec=sections[i] as HTMLElement;
+        /* Find section title from the heading element */
+        const titleEl=sec.querySelector("h3,h2,[class*='font-bold']") as HTMLElement|null;
+        const titleText=titleEl?.textContent?.trim()||"Section "+i;
+        secMap.set(titleText,{el:sec,idx:i});
+      }
+
+      for(let i=2;i<sections.length;i++){
+        const sec=sections[i] as HTMLElement;
+        const titleEl=sec.querySelector("h3,h2,.text-lg,.font-extrabold") as HTMLElement|null;
+        const secTitle=titleEl?.textContent?.trim()||"";
+
+        /* Section title as editable text */
+        if(secTitle)children.push(heading(secTitle));
+
+        /* Check if this is a special text-only section */
+        const isResumen=secTitle.includes("Resumen");
+        const isTemas=secTitle.includes("Temas");
+        const isConclusion=secTitle.includes("Conclusiones");
+        const isRecomendacion=secTitle.includes("Recomendaciones");
+        const isTopPub=secTitle.includes("Top Publicaciones");
+
+        if(isTemas){
+          /* Temas: parse JSON and render as numbered items */
+          const temasData=aiTemas(pd,aiTexts);
+          for(let ti=0;ti<temasData.length;ti++){
+            const t=temasData[ti];
+            children.push(new Paragraph({spacing:{before:160,after:60},
+              children:[new TextRun({text:(ti+1)+". "+t.tema,bold:true,size:24,font:"Arial"})]}));
+            children.push(new Paragraph({spacing:{after:120},children:aiRuns(t.detalle)}));
+          }
+          /* Also add AI analysis if exists */
+          const aiText=aiTexts.temas;
+          if(!aiText){/* temas already rendered above */}
+        }else if(isTopPub){
+          /* Top Publicaciones: render as Word tables */
+          const border={style:1,size:1,color:"E2E8F0"};
+          const borders={top:border,bottom:border,left:border,right:border};
+          const hdrShading={fill:"F8FAFC",type:ShadingType.CLEAR};
+          const cellM={top:60,bottom:60,left:80,right:80};
+
+          /* General Top 5 */
+          if(pd.top5AlcGeneral.length>0){
+            children.push(new Paragraph({spacing:{before:120,after:60},
+              children:[new TextRun({text:"Top 5 General por Alcance",bold:true,size:24,font:"Arial"})]}));
+            const rows=[new TableRow({children:[
+              new TableCell({borders,shading:hdrShading,margins:cellM,width:{size:400,type:WidthType.DXA},children:[new Paragraph({children:[new TextRun({text:"#",bold:true,size:20,font:"Arial"})]})]}),
+              new TableCell({borders,shading:hdrShading,margins:cellM,width:{size:4000,type:WidthType.DXA},children:[new Paragraph({children:[new TextRun({text:"Nombre",bold:true,size:20,font:"Arial"})]})]}),
+              new TableCell({borders,shading:hdrShading,margins:cellM,width:{size:1500,type:WidthType.DXA},children:[new Paragraph({alignment:AlignmentType.RIGHT,children:[new TextRun({text:"Alcance",bold:true,size:20,font:"Arial"})]})]}),
+              new TableCell({borders,shading:hdrShading,margins:cellM,width:{size:800,type:WidthType.DXA},children:[new Paragraph({alignment:AlignmentType.CENTER,children:[new TextRun({text:"Link",bold:true,size:20,font:"Arial"})]})]})
+            ]})];
+            pd.top5AlcGeneral.forEach((item,idx)=>{
+              const linkCell=item.link&&item.link!=="undefined"?
+                [new ExternalHyperlink({children:[new TextRun({text:"Ver",style:"Hyperlink",size:20,font:"Arial"})],link:item.link})]
+                :[new TextRun({text:"—",size:20,font:"Arial",color:"CCCCCC"})];
+              rows.push(new TableRow({children:[
+                new TableCell({borders,margins:cellM,width:{size:400,type:WidthType.DXA},children:[new Paragraph({children:[new TextRun({text:String(idx+1),bold:true,size:20,font:"Arial"})]})]}),
+                new TableCell({borders,margins:cellM,width:{size:4000,type:WidthType.DXA},children:[new Paragraph({children:[new TextRun({text:item.nombre+(item.titulo?" — "+item.titulo:""),size:20,font:"Arial"})]})]}),
+                new TableCell({borders,margins:cellM,width:{size:1500,type:WidthType.DXA},children:[new Paragraph({alignment:AlignmentType.RIGHT,children:[new TextRun({text:fmt(item.valor),bold:true,size:20,font:"Arial",color:acHex})]})]}),
+                new TableCell({borders,margins:cellM,width:{size:800,type:WidthType.DXA},children:[new Paragraph({alignment:AlignmentType.CENTER,children:linkCell as unknown as InstanceType<typeof TextRun>[]})]})
+              ]}));
+            });
+            children.push(new Table({width:{size:6700,type:WidthType.DXA},columnWidths:[400,4000,1500,800],rows}));
+          }
+          /* AI analysis for topPub */
+          const topAi=aiTexts.topPub;
+          if(topAi){const paras=(typeof topAi==="string"?topAi:String(topAi)).split(/\s*\|\|\s*/).filter(Boolean);
+            paras.forEach(p=>{children.push(new Paragraph({spacing:{after:80},children:aiRuns(p)}))});
+          }
+        }else if(isResumen||isConclusion||isRecomendacion){
+          /* Pure AI text sections */
+          const keyMap:Record<string,string>={"Resumen":"resumen","Conclusiones":"conclusiones","Recomendaciones":"recomendaciones"};
+          const k=Object.entries(keyMap).find(([prefix])=>secTitle.includes(prefix));
+          const aiText=k?aiTexts[k[1]]:"";
+          if(aiText){
+            const t=typeof aiText==="string"?aiText:String(aiText);
+            const paras=t.split(/\s*\|\|\s*/).filter(Boolean);
+            paras.forEach(p=>{children.push(new Paragraph({spacing:{after:100},children:aiRuns(p)}))});
+          }
+        }else{
+          /* Chart sections: capture chart as image, add AI text below */
+          /* Find chart container (recharts-responsive-container or similar) */
+          const chartEl=sec.querySelector(".recharts-responsive-container,.recharts-wrapper,svg[class*='recharts']") as HTMLElement|null;
+          const vizEl=chartEl||(sec.querySelector("[class*='grid'],[class*='flex']") as HTMLElement|null);
+
+          if(vizEl){
+            try{
+              const vizImg=await captureEl(sec);
+              children.push(imgPara(vizImg));
+            }catch(e){console.warn("Chart capture failed:",e)}
+          }else{
+            /* No chart - capture whole section as image */
+            try{
+              const secImg=await captureEl(sec);
+              children.push(imgPara(secImg));
+            }catch(e){console.warn("Section capture failed:",e)}
+          }
+
+          /* Add corresponding AI text */
+          const aiKeyMap:Record<string,string>={
+            "Distribución":"fuentes","Tendencia de Conversación":"picos","Tráfico de Información":"picos",
+            "Actividad por Hora":"hora","Indicadores de Sentimiento":"sentimiento",
+            "Análisis de Sentimiento":"sentimiento","Tendencia del Sentimiento":"tendSent",
+            "Distribución de Notas por Tier":"tier","Top 5 Medios":"top5med",
+            "Distribución por Tipo de Nota":"tipoNota","Distribución por Estado":"estado",
+            "Menciones Populares":"topPub","Tráfico Redes":"picosRedes","Tráfico Medios":"picosMedios"
+          };
+          const matchedKey=Object.entries(aiKeyMap).find(([prefix])=>secTitle.includes(prefix));
+          if(matchedKey){
+            const aiText=aiTexts[matchedKey[1]];
+            if(aiText){
+              const t=typeof aiText==="string"?aiText:String(aiText);
+              const paras=t.split(/\s*\|\|\s*/).filter(Boolean);
+              paras.forEach(p=>{children.push(new Paragraph({spacing:{after:80},children:aiRuns(p)}))});
+            }
+          }
+        }
+        children.push(blank());
       }
 
       /* Footer */
-      children.push(new Paragraph({spacing:{before:400},alignment:AlignmentType.CENTER,
+      children.push(new Paragraph({spacing:{before:300},alignment:AlignmentType.CENTER,
         children:[new TextRun({text:"Generado por ReporteaJDOR",size:16,font:"Arial",color:"94a3b8"})]}));
 
       const doc=new DocxDoc({
+        styles:{default:{document:{run:{font:"Arial",size:24},paragraph:{spacing:{line:240}}}}},
         sections:[{
           properties:{
             page:{
               size:{width:15840,height:12240,orientation:PageOrientation.LANDSCAPE},
-              margin:{top:720,right:1080,bottom:720,left:1080}
+              margin:{top:720,right:900,bottom:720,left:900}
             }
           },
           children:children as InstanceType<typeof Paragraph>[]
