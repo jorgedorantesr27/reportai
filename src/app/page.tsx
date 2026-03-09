@@ -134,7 +134,7 @@ function processFusionado(sp:PData,mp:PData):PData{
   const t5cg=[...combined].sort((a,b)=>b.costo-a.costo).slice(0,5).map(r=>({nombre:r.nombre,valor:r.costo,link:r.link,fuente:r.fuente,titulo:r.titulo}));
   const t5af={...sp.top5AlcPorFuente,...mp.top5AlcPorFuente};
   const t5cf={...sp.top5CostPorFuente,...mp.top5CostPorFuente};
-  return{dataType:"fusionado",totalMenciones:n,totalAlcance:alc,totalInteracciones:inter,autoresUnicos:uniq,totalCosto:costT,sentCounts:sc,sentNeto:sn,trendData:td,fuenteData:fd,kpiByFuente:kf,topPositivas:[...sp.topPositivas.slice(0,5)],topNegativas:[...sp.topNegativas.slice(0,5)],rawRows:[...sp.rawRows,...mp.rawRows],top5AlcGeneral:t5ag,top5CostGeneral:t5cg,top5AlcPorFuente:t5af,top5CostPorFuente:t5cf,hourData:sp.hourData,tierData:mp.tierData,tipoNotaData:mp.tipoNotaData,estadoData:mp.estadoData,top5Medios:mp.top5Medios};
+  return{dataType:"fusionado",totalMenciones:n,totalAlcance:alc,totalInteracciones:inter,autoresUnicos:uniq,totalCosto:costT,sentCounts:sc,sentNeto:sn,trendData:td,fuenteData:fd,kpiByFuente:kf,topPositivas:[...sp.topPositivas.slice(0,5),...mp.topPositivas.slice(0,5)],topNegativas:[...sp.topNegativas.slice(0,5),...mp.topNegativas.slice(0,5)],rawRows:[...sp.rawRows,...mp.rawRows],top5AlcGeneral:t5ag,top5CostGeneral:t5cg,top5AlcPorFuente:t5af,top5CostPorFuente:t5cf,hourData:sp.hourData,tierData:mp.tierData,tipoNotaData:mp.tipoNotaData,estadoData:mp.estadoData,top5Medios:mp.top5Medios};
 }
 function parseNum(v:unknown):number{if(typeof v==="number")return v;if(typeof v==="string"){if(v.startsWith("="))return 0;const c=v.replace(/[$,\s]/g,"");const n=parseFloat(c);return isNaN(n)?0:n}return 0}
 function fmt(n:number):string{if(n>=1e6)return(n/1e6).toFixed(1)+"M";if(n>=1e3)return(n/1e3).toFixed(1)+"K";return String(Math.round(n))}
@@ -516,7 +516,7 @@ FORMATO: JSON válido sin markdown ni backticks. NO uses saltos de línea dentro
 
       /* ── Helpers ── */
       const capEl=async(e:HTMLElement,bg="#ffffff"):Promise<{d:Uint8Array;w:number;h:number}>=>{
-        const cv=await html2canvas(e,{scale:2,useCORS:true,logging:false,windowWidth:940,backgroundColor:bg});
+        const cv=await html2canvas(e,{scale:3,useCORS:true,logging:false,windowWidth:940,backgroundColor:bg});
         const du=cv.toDataURL("image/png");const b=atob(du.split(",")[1]);
         const a=new Uint8Array(b.length);for(let j=0;j<b.length;j++)a[j]=b.charCodeAt(j);
         return{d:a,w:cv.width,h:cv.height};
@@ -555,19 +555,22 @@ FORMATO: JSON válido sin markdown ni backticks. NO uses saltos de línea dentro
 
       /* ── Capture chart only (hide title bar + AIBlock) ── */
       const capChart=async(sec:HTMLElement):Promise<{d:Uint8Array;w:number;h:number}|null>=>{
-        /* Find title bar (first child with h2) and AIBlocks */
-        const titleBar=sec.querySelector(":scope > div:first-child") as HTMLElement|null;
-        const aiBlocks=sec.querySelectorAll("[class*='rounded-xl'][class*='p-4']") as NodeListOf<HTMLElement>;
         const hidden:HTMLElement[]=[];
-        /* Hide title bar */
-        if(titleBar&&titleBar.querySelector("h2")){titleBar.style.display="none";hidden.push(titleBar)}
-        /* Hide AI blocks (they have "ANÁLISIS IA" text) */
-        aiBlocks.forEach(ab=>{if(ab.textContent?.includes("ANÁLISIS IA")){ab.style.display="none";hidden.push(ab)}});
-        /* Check if anything visible remains */
-        const remaining=sec.querySelector(".recharts-responsive-container,canvas,svg,.bg-gray-50,.grid,.flex");
-        let result=null;
-        if(remaining){try{result=await capEl(sec)}catch(e){console.warn(e)}}
-        /* Restore */
+        /* The Sec component renders: <div class="bg-white..."><div class="flex items-center gap-2.5 mb-5">{icon}<h2/></div>{children}</div> */
+        /* Find all h2 title bars and AI blocks within the section */
+        sec.querySelectorAll("h2").forEach(h2=>{
+          const bar=h2.parentElement;
+          if(bar){bar.style.display="none";hidden.push(bar)}
+        });
+        /* Hide AI blocks (contain sparkle icon + "ANÁLISIS IA") */
+        sec.querySelectorAll("div").forEach(div=>{
+          const el=div as HTMLElement;
+          if(el.textContent?.includes("ANÁLISIS IA")&&el.className?.includes("rounded")){
+            el.style.display="none";hidden.push(el);
+          }
+        });
+        let result:null|{d:Uint8Array;w:number;h:number}=null;
+        try{result=await capEl(sec,"#ffffff")}catch(e){console.warn("capChart error:",e)}
         hidden.forEach(h=>h.style.display="");
         return result;
       };
@@ -601,41 +604,58 @@ FORMATO: JSON válido sin markdown ni backticks. NO uses saltos de línea dentro
       const mkT5=(items:Top5Item[],label:string,title?:string)=>{
         const res:unknown[]=[];
         if(title)res.push(new Paragraph({spacing:{before:100,after:40},children:[new TextRun({text:title,bold:true,size:22,font:"Arial"})]}));
+        const cW=[329,8505,850,737];/* 0.58cm, 15cm, 1.5cm, 1.3cm */
+        const tW=cW.reduce((a,b)=>a+b,0);
         const rows=[new TableRow({children:[
-          new TableCell({borders:bds,shading:hdrBg,margins:cm,width:{size:350,type:WidthType.DXA},children:[new Paragraph({children:[new TextRun({text:"#",bold:true,size:18,font:"Arial"})]})]}),
-          new TableCell({borders:bds,shading:hdrBg,margins:cm,width:{size:3200,type:WidthType.DXA},children:[new Paragraph({children:[new TextRun({text:"Nombre",bold:true,size:18,font:"Arial"})]})]}),
-          new TableCell({borders:bds,shading:hdrBg,margins:cm,width:{size:1200,type:WidthType.DXA},children:[new Paragraph({alignment:AlignmentType.RIGHT,children:[new TextRun({text:label,bold:true,size:18,font:"Arial"})]})]}),
-          new TableCell({borders:bds,shading:hdrBg,margins:cm,width:{size:600,type:WidthType.DXA},children:[new Paragraph({alignment:AlignmentType.CENTER,children:[new TextRun({text:"Link",bold:true,size:18,font:"Arial"})]})]})
+          new TableCell({borders:bds,shading:hdrBg,margins:cm,width:{size:cW[0],type:WidthType.DXA},children:[new Paragraph({alignment:AlignmentType.CENTER,children:[new TextRun({text:"#",bold:true,size:18,font:"Arial"})]})]}),
+          new TableCell({borders:bds,shading:hdrBg,margins:cm,width:{size:cW[1],type:WidthType.DXA},children:[new Paragraph({children:[new TextRun({text:"Nombre",bold:true,size:18,font:"Arial"})]})]}),
+          new TableCell({borders:bds,shading:hdrBg,margins:cm,width:{size:cW[2],type:WidthType.DXA},children:[new Paragraph({alignment:AlignmentType.CENTER,children:[new TextRun({text:label,bold:true,size:18,font:"Arial"})]})]}),
+          new TableCell({borders:bds,shading:hdrBg,margins:cm,width:{size:cW[3],type:WidthType.DXA},children:[new Paragraph({alignment:AlignmentType.CENTER,children:[new TextRun({text:"Link",bold:true,size:18,font:"Arial"})]})]})
         ]})];
         items.forEach((it,idx)=>{
           const lk=it.link&&it.link!=="undefined"?
             [new ExternalHyperlink({children:[new TextRun({text:"Ver",style:"Hyperlink",size:18,font:"Arial"})],link:it.link})]
             :[new TextRun({text:"—",size:18,color:"CCCCCC"})];
           rows.push(new TableRow({children:[
-            new TableCell({borders:bds,margins:cm,width:{size:350,type:WidthType.DXA},children:[new Paragraph({children:[new TextRun({text:String(idx+1),bold:true,size:18,font:"Arial"})]})]}),
-            new TableCell({borders:bds,margins:cm,width:{size:3200,type:WidthType.DXA},children:[new Paragraph({children:[new TextRun({text:it.nombre+(it.titulo?" — "+it.titulo:""),size:18,font:"Arial"})]})]}),
-            new TableCell({borders:bds,margins:cm,width:{size:1200,type:WidthType.DXA},children:[new Paragraph({alignment:AlignmentType.RIGHT,children:[new TextRun({text:label==="Costo"||label==="AVE"?fmtM(it.valor):fmt(it.valor),bold:true,size:18,font:"Arial",color:acHex})]})]}),
-            new TableCell({borders:bds,margins:cm,width:{size:600,type:WidthType.DXA},children:[new Paragraph({alignment:AlignmentType.CENTER,children:lk as InstanceType<typeof TextRun>[]})]})
+            new TableCell({borders:bds,margins:cm,width:{size:cW[0],type:WidthType.DXA},children:[new Paragraph({alignment:AlignmentType.CENTER,children:[new TextRun({text:String(idx+1),bold:true,size:18,font:"Arial"})]})]}),
+            new TableCell({borders:bds,margins:cm,width:{size:cW[1],type:WidthType.DXA},children:[new Paragraph({children:[new TextRun({text:it.nombre+(it.titulo?" — "+it.titulo:""),size:18,font:"Arial"})]})]}),
+            new TableCell({borders:bds,margins:cm,width:{size:cW[2],type:WidthType.DXA},children:[new Paragraph({alignment:AlignmentType.CENTER,children:[new TextRun({text:label==="Costo"||label==="AVE"?fmtM(it.valor):fmt(it.valor),bold:true,size:18,font:"Arial",color:acHex})]})]}),
+            new TableCell({borders:bds,margins:cm,width:{size:cW[3],type:WidthType.DXA},children:[new Paragraph({alignment:AlignmentType.CENTER,children:lk as InstanceType<typeof TextRun>[]})]})
           ]}));
         });
-        res.push(new Table({width:{size:5350,type:WidthType.DXA},columnWidths:[350,3200,1200,600],rows}));
+        res.push(new Table({width:{size:tW,type:WidthType.DXA},columnWidths:cW,rows}));
         return res;
       };
 
-      /* ── Menciones table builder ── */
-      const mkMen=(items:{autor:string;contenido:string;link:string;fuente:string;alcance:number}[],color:string,title:string)=>{
+      /* ── Menciones table builder (same format as T5 but with sentiment color) ── */
+      const mkMen=(items:{autor:string;contenido:string;link:string;fuente:string;alcance:number}[],sentColor:string,title:string)=>{
         const res:unknown[]=[];
-        res.push(new Paragraph({spacing:{before:100,after:40},children:[new TextRun({text:title,bold:true,size:22,font:"Arial",color:hex6(color)})]}));
-        items.forEach((it)=>{
-          const lk=it.link?[new ExternalHyperlink({children:[new TextRun({text:"Ver original",style:"Hyperlink",size:16,font:"Arial"})],link:it.link})]
-            :[new TextRun({text:"",size:16})];
-          res.push(new Paragraph({spacing:{after:20},border:{top:{style:"single" as const,size:1,color:hex6(color)}},
-            children:[new TextRun({text:it.autor,bold:true,size:20,font:"Arial"}),
-              new TextRun({text:" — "+it.fuente,size:18,font:"Arial",color:"94A3B8"}),
-              new TextRun({text:it.alcance>0?" | "+fmt(it.alcance)+" alcance":"",size:18,font:"Arial",color:"94A3B8"})]}));
-          res.push(new Paragraph({spacing:{after:10},children:[new TextRun({text:it.contenido.substring(0,200),size:18,font:"Arial",color:"64748B"})]}));
-          res.push(new Paragraph({spacing:{after:60},children:lk as InstanceType<typeof TextRun>[]}));
+        const sc=hex6(sentColor);
+        const cW=[329,8505,850,737];
+        const tW=cW.reduce((a,b)=>a+b,0);
+        const hdrSh={fill:sc,type:ShadingType.CLEAR};
+        res.push(new Paragraph({spacing:{before:120,after:40},children:[new TextRun({text:title,bold:true,size:24,font:"Arial",color:sc})]}));
+        const rows=[new TableRow({children:[
+          new TableCell({borders:bds,shading:hdrSh,margins:cm,width:{size:cW[0],type:WidthType.DXA},children:[new Paragraph({alignment:AlignmentType.CENTER,children:[new TextRun({text:"#",bold:true,size:18,font:"Arial",color:"FFFFFF"})]})]}),
+          new TableCell({borders:bds,shading:hdrSh,margins:cm,width:{size:cW[1],type:WidthType.DXA},children:[new Paragraph({children:[new TextRun({text:"Mención",bold:true,size:18,font:"Arial",color:"FFFFFF"})]})]}),
+          new TableCell({borders:bds,shading:hdrSh,margins:cm,width:{size:cW[2],type:WidthType.DXA},children:[new Paragraph({alignment:AlignmentType.CENTER,children:[new TextRun({text:"Alcance",bold:true,size:18,font:"Arial",color:"FFFFFF"})]})]}),
+          new TableCell({borders:bds,shading:hdrSh,margins:cm,width:{size:cW[3],type:WidthType.DXA},children:[new Paragraph({alignment:AlignmentType.CENTER,children:[new TextRun({text:"Link",bold:true,size:18,font:"Arial",color:"FFFFFF"})]})]})
+        ]})];
+        items.forEach((it,idx)=>{
+          const lk=it.link?[new ExternalHyperlink({children:[new TextRun({text:"Ver",style:"Hyperlink",size:18,font:"Arial"})],link:it.link})]
+            :[new TextRun({text:"—",size:18,color:"CCCCCC"})];
+          const leftBdr={...bds,left:{style:"single" as const,size:6,color:sc}};
+          rows.push(new TableRow({children:[
+            new TableCell({borders:leftBdr,margins:cm,width:{size:cW[0],type:WidthType.DXA},children:[new Paragraph({alignment:AlignmentType.CENTER,children:[new TextRun({text:String(idx+1),bold:true,size:18,font:"Arial"})]})]}),
+            new TableCell({borders:bds,margins:cm,width:{size:cW[1],type:WidthType.DXA},children:[
+              new Paragraph({children:[new TextRun({text:it.autor,bold:true,size:18,font:"Arial"}),new TextRun({text:" — "+it.fuente,size:16,font:"Arial",color:"94A3B8"})]}),
+              new Paragraph({spacing:{after:20},children:[new TextRun({text:it.contenido.substring(0,180),size:16,font:"Arial",color:"64748B"})]})
+            ]}),
+            new TableCell({borders:bds,margins:cm,width:{size:cW[2],type:WidthType.DXA},children:[new Paragraph({alignment:AlignmentType.CENTER,children:[new TextRun({text:it.alcance>0?fmt(it.alcance):"—",bold:true,size:18,font:"Arial",color:sc})]})]}),
+            new TableCell({borders:bds,margins:cm,width:{size:cW[3],type:WidthType.DXA},children:[new Paragraph({alignment:AlignmentType.CENTER,children:lk as InstanceType<typeof TextRun>[]})]})
+          ]}));
         });
+        res.push(new Table({width:{size:tW,type:WidthType.DXA},columnWidths:cW,rows}));
         return res;
       };
 
@@ -703,10 +723,21 @@ FORMATO: JSON válido sin markdown ni backticks. NO uses saltos de línea dentro
             ch.push(bl());
           }
         }else if(isMenciones){
-          /* ── Menciones Populares: Word tables (positive + negative) ── */
-          if(pd.topPositivas.length>0)ch.push(...mkMen(pd.topPositivas,brand.positiveColor,"Top 5 Positivas") as InstanceType<typeof Paragraph>[]);
-          ch.push(bl());
-          if(pd.topNegativas.length>0)ch.push(...mkMen(pd.topNegativas,brand.negativeColor,"Top 5 Negativas") as InstanceType<typeof Paragraph>[]);
+          /* ── Menciones Populares: Word tables with green/red sentiment ── */
+          if(pd.dataType==="fusionado"&&sPd&&mPd){
+            /* Fusionado: show social and media separately */
+            if(sPd.topPositivas.length>0)ch.push(...mkMen(sPd.topPositivas,brand.positiveColor,"Positivas — Redes Sociales") as InstanceType<typeof Paragraph>[]);
+            ch.push(bl());
+            if(sPd.topNegativas.length>0)ch.push(...mkMen(sPd.topNegativas,brand.negativeColor,"Negativas — Redes Sociales") as InstanceType<typeof Paragraph>[]);
+            ch.push(bl());
+            if(mPd.topPositivas.length>0)ch.push(...mkMen(mPd.topPositivas,brand.positiveColor,"Positivas — Medios Tradicionales") as InstanceType<typeof Paragraph>[]);
+            ch.push(bl());
+            if(mPd.topNegativas.length>0)ch.push(...mkMen(mPd.topNegativas,brand.negativeColor,"Negativas — Medios Tradicionales") as InstanceType<typeof Paragraph>[]);
+          }else{
+            if(pd.topPositivas.length>0)ch.push(...mkMen(pd.topPositivas,brand.positiveColor,"Top 5 Positivas") as InstanceType<typeof Paragraph>[]);
+            ch.push(bl());
+            if(pd.topNegativas.length>0)ch.push(...mkMen(pd.topNegativas,brand.negativeColor,"Top 5 Negativas") as InstanceType<typeof Paragraph>[]);
+          }
         }else if(isTextOnly){
           /* ── Pure text sections ── */
           const aiKey=getAiKey(secTitle);
@@ -741,7 +772,7 @@ FORMATO: JSON válido sin markdown ni backticks. NO uses saltos de línea dentro
       });
       const buf=await Packer.toBlob(doc);
       saveAs(buf,(reportSubject||"reporte")+".docx");
-    }catch(e){console.error("DOCX export error:",e);alert("Error al exportar Word: "+String(e)+"\nInstala: npm install docx file-saver html2canvas")}
+    }catch(e){console.error("DOCX export error:",e);alert("Error al exportar Word: "+String(e))}
     setExportLoading("");
   };
 
