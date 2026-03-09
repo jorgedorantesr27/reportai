@@ -619,7 +619,7 @@ FORMATO: JSON válido sin markdown ni backticks. NO uses saltos de línea dentro
           if(!aiText){/* temas already rendered above */}
         }else if(isTopPub){
           /* Top Publicaciones: render as Word tables */
-          const border={style:1,size:1,color:"E2E8F0"};
+          const border={style:"single" as const,size:1,color:"E2E8F0"};
           const borders={top:border,bottom:border,left:border,right:border};
           const hdrShading={fill:"F8FAFC",type:ShadingType.CLEAR};
           const cellM={top:60,bottom:60,left:80,right:80};
