@@ -510,8 +510,9 @@ FORMATO: JSON válido sin markdown ni backticks. NO uses saltos de línea dentro
       const fileSaver=await import("file-saver");
       const saveAs=fileSaver.saveAs||fileSaver.default;
       const el=reportContainerRef.current;
-      const acHex=(brand.accentColor||"#0f3460").replace("#","");
-      const prHex=(brand.primaryColor||"#1a1a2e").replace("#","");
+      const hex6=(c:string)=>{const h=c.replace("#","").replace(/[^0-9a-fA-F]/g,"");return h.length>=6?h.substring(0,6):h.padEnd(6,"0")};
+      const acHex=hex6(brand.accentColor||"0f3460");
+      const prHex=hex6(brand.primaryColor||"1a1a2e");
 
       /* ── Helpers ── */
       const capEl=async(e:HTMLElement,bg="#ffffff"):Promise<{d:Uint8Array;w:number;h:number}>=>{
@@ -624,11 +625,11 @@ FORMATO: JSON válido sin markdown ni backticks. NO uses saltos de línea dentro
       /* ── Menciones table builder ── */
       const mkMen=(items:{autor:string;contenido:string;link:string;fuente:string;alcance:number}[],color:string,title:string)=>{
         const res:unknown[]=[];
-        res.push(new Paragraph({spacing:{before:100,after:40},children:[new TextRun({text:title,bold:true,size:22,font:"Arial",color:color.replace("#","")})]}));
+        res.push(new Paragraph({spacing:{before:100,after:40},children:[new TextRun({text:title,bold:true,size:22,font:"Arial",color:hex6(color)})]}));
         items.forEach((it)=>{
           const lk=it.link?[new ExternalHyperlink({children:[new TextRun({text:"Ver original",style:"Hyperlink",size:16,font:"Arial"})],link:it.link})]
             :[new TextRun({text:"",size:16})];
-          res.push(new Paragraph({spacing:{after:20},border:{top:{style:"single" as const,size:1,color:color.replace("#","")+"40"}},
+          res.push(new Paragraph({spacing:{after:20},border:{top:{style:"single" as const,size:1,color:hex6(color)}},
             children:[new TextRun({text:it.autor,bold:true,size:20,font:"Arial"}),
               new TextRun({text:" — "+it.fuente,size:18,font:"Arial",color:"94A3B8"}),
               new TextRun({text:it.alcance>0?" | "+fmt(it.alcance)+" alcance":"",size:18,font:"Arial",color:"94A3B8"})]}));
