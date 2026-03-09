@@ -505,7 +505,7 @@ FORMATO: JSON válido sin markdown ni backticks. NO uses saltos de línea dentro
     try{
       const html2canvas=(await import("html2canvas")).default;
       const docxLib=await import("docx");
-      const{Document:DocxDoc,Packer,Paragraph,TextRun,ImageRun,HeadingLevel,AlignmentType,PageBreak,
+      const{Document:DocxDoc,Packer,Paragraph,TextRun,ImageRun,AlignmentType,PageBreak,
         ExternalHyperlink,PageOrientation,Table,TableRow,TableCell,WidthType,
         ShadingType}=docxLib;
       const fileSaver=await import("file-saver");
