@@ -28,7 +28,7 @@ const VS=["Facebook","Instagram","TikTok","X","YouTube"];
 const VM=["Internet","Periódico","Radio","Revista","Televisión"];
 
 /* ═══════ TYPES ═══════ */
-interface SocialRow{Fecha:string;Fuente:string;Autor:string;Sentimiento:string;Alcance:number;Likes:number;Comentarios:number;Compartidos:number;Contenido:string;Link:string;Seguidores:number;AVE:number;Hora:number}
+interface SocialRow{Fecha:string;Fuente:string;Autor:string;Sentimiento:string;Alcance:number;Likes:number;Comentarios:number;Compartidos:number;Vistas:number;Contenido:string;Link:string;Seguidores:number;AVE:number;Hora:number}
 interface MediaRow{Titulo:string;Texto:string;Autor:string;Fecha:string;Medio:string;TipoMedio:string;Sentimiento:string;Alcance:number;Tier:string;Costo:number;Link:string;TipoNota:string;Estado:string}
 interface Brand{name:string;primaryColor:string;secondaryColor:string;accentColor:string;positiveColor:string;negativeColor:string;neutralColor:string;chartColors:string[];titleFont:string;bodyFont:string;mediaColors:Record<string,string>;tierColors:Record<string,string>;top5MedColor:string;bannerPrimary:string;bannerSecondary:string;titleTextColor:string;aiBlockColor:string}
 interface TrendRow{date:string;total:number;Positivo:number;Negativo:number;Neutro:number;[k:string]:string|number}
@@ -52,7 +52,7 @@ interface PData{
 function processSocial(rows:SocialRow[]):PData{
   const f=rows.filter(r=>VS.includes(r.Fuente));const n=f.length;
   const alc=f.reduce((s,r)=>s+(r.Alcance||0),0);
-  const inter=f.reduce((s,r)=>s+(r.Likes||0)+(r.Comentarios||0)+(r.Compartidos||0),0);
+  const inter=f.reduce((s,r)=>s+(r.Vistas||0)+(r.Likes||0)+(r.Comentarios||0)+(r.Compartidos||0),0);
   const uniq=new Set(f.map(r=>r.Autor)).size;
   const costT=f.reduce((s,r)=>s+(r.AVE||0),0);
   const sc={Positivo:0,Negativo:0,Neutro:0};
@@ -65,7 +65,7 @@ function processSocial(rows:SocialRow[]):PData{
   f.forEach(r=>{const k=r.Fuente;if(!fm[k])fm[k]={fuente:k,Positivo:0,Negativo:0,Neutro:0,total:0};fm[k].total++;if(r.Sentimiento==="Positivo")fm[k].Positivo++;if(r.Sentimiento==="Negativo")fm[k].Negativo++;if(r.Sentimiento==="Neutro")fm[k].Neutro++});
   const fd=Object.values(fm).sort((a,b)=>{const ia=VS.indexOf(a.fuente);const ib=VS.indexOf(b.fuente);return ia-ib});
   const km:Record<string,{fuente:string;menciones:number;interacciones:number;impresiones:number;autores:Set<string>;costo:number}>={};
-  f.forEach(r=>{const k=r.Fuente;if(!km[k])km[k]={fuente:k,menciones:0,interacciones:0,impresiones:0,autores:new Set(),costo:0};km[k].menciones++;km[k].interacciones+=(r.Likes||0)+(r.Comentarios||0)+(r.Compartidos||0);km[k].impresiones+=r.Alcance||0;km[k].autores.add(r.Autor);km[k].costo+=r.AVE||0});
+  f.forEach(r=>{const k=r.Fuente;if(!km[k])km[k]={fuente:k,menciones:0,interacciones:0,impresiones:0,autores:new Set(),costo:0};km[k].menciones++;km[k].interacciones+=(r.Vistas||0)+(r.Likes||0)+(r.Comentarios||0)+(r.Compartidos||0);km[k].impresiones+=r.Alcance||0;km[k].autores.add(r.Autor);km[k].costo+=r.AVE||0});
   const kf=Object.values(km).map(k=>({fuente:k.fuente,menciones:k.menciones,interacciones:k.interacciones,impresiones:k.impresiones,lideres:k.autores.size,costo:k.costo})).sort((a,b)=>{const ia=VS.indexOf(a.fuente);const ib=VS.indexOf(b.fuente);return ia-ib});
   const seen1=new Set<string>();const tp=f.filter(r=>r.Sentimiento==="Positivo").sort((a,b)=>(b.Alcance||0)-(a.Alcance||0)).filter(r=>{const k=r.Autor+r.Contenido;if(seen1.has(k))return false;seen1.add(k);return true}).slice(0,5).map(r=>({autor:r.Autor,contenido:r.Contenido||"",link:r.Link||"",fuente:r.Fuente,alcance:r.Alcance||0}));
   const seen2=new Set<string>();const tn=f.filter(r=>r.Sentimiento==="Negativo").sort((a,b)=>(b.Alcance||0)-(a.Alcance||0)).filter(r=>{const k=r.Autor+r.Contenido;if(seen2.has(k))return false;seen2.add(k);return true}).slice(0,5).map(r=>({autor:r.Autor,contenido:r.Contenido||"",link:r.Link||"",fuente:r.Fuente,alcance:r.Alcance||0}));
@@ -184,7 +184,7 @@ function parseExcel(file:File):Promise<{social:SocialRow[];media:MediaRow[]}>{
               let ave=parseNum(row["AVE"]);
               if(ave===0){const cellRef="Q"+(ri+2);const cell=ws[cellRef];if(cell&&typeof cell.v==="number")ave=cell.v}
               if(ave===0){const seg=parseNum(row["Seguidores del Autor"]);let cpm=parseNum(row["CPM (MXN)"]);if(cpm===0){const cpmRef="N"+(ri+2);const cpmCell=ws[cpmRef];if(cpmCell&&typeof cpmCell.v==="number")cpm=cpmCell.v}if(seg>0&&cpm>0)ave=(seg*0.1/1000)*cpm}
-              social.push({Fecha:fs,Fuente:String(row["Plataforma"]||row["Fuente"]||""),Autor:String(row["Usuario"]||row["Autor"]||""),Sentimiento:String(row["Sentimiento (Red Social)"]||row["Sentimiento"]||""),Alcance:Number(row["Seguidores del Autor"]||row["Alcance"]||0),Likes:Number(row["Me Gusta / Likes"]||row["Likes"]||0),Comentarios:Number(row["Comentarios"]||0),Compartidos:Number(row["Compartidos"]||0),Contenido:String(row["Contenido"]||""),Link:String(row["Link URL Medio"]||row["URL"]||""),Seguidores:Number(row["Seguidores del Autor"]||0),AVE:ave,Hora:hora})
+              social.push({Fecha:fs,Fuente:String(row["Plataforma"]||row["Fuente"]||""),Autor:String(row["Usuario"]||row["Autor"]||""),Sentimiento:String(row["Sentimiento (Red Social)"]||row["Sentimiento"]||""),Alcance:Number(row["Seguidores del Autor"]||row["Alcance"]||0),Likes:Number(row["Me Gusta / Likes"]||row["Likes"]||0),Comentarios:Number(row["Comentarios"]||0),Compartidos:Number(row["Compartidos"]||0),Vistas:Number(row["Reproducciones"]||row["Vistas"]||0),Contenido:String(row["Contenido"]||""),Link:String(row["Link URL Medio"]||row["URL"]||""),Seguidores:Number(row["Seguidores del Autor"]||0),AVE:ave,Hora:hora})
             });
           }
         });
@@ -498,33 +498,135 @@ FORMATO: JSON válido sin markdown ni backticks. NO uses saltos de línea dentro
   const reportContainerRef=useRef<HTMLDivElement>(null);
 
   /* ═══ EXPORT: WORD (HTML-based, zero dependencies) ═══ */
-  /* ═══ EXPORT HELPER: capture report HTML with inline styles ═══ */
-  const captureReportHTML=():string=>{
-    const el=reportContainerRef.current;if(!el)return"";
-    const clone=el.cloneNode(true) as HTMLElement;
-    /* Remove interactive buttons, loading indicators */
-    clone.querySelectorAll("button,input,.animate-spin").forEach(e=>e.remove());
-    /* Inline computed styles for key elements */
-    const src=el.querySelectorAll("*");const dst=clone.querySelectorAll("*");
-    src.forEach((s,i)=>{if(!dst[i])return;const cs=window.getComputedStyle(s);const important=["color","background-color","background","font-size","font-weight","font-family","font-style","border","border-radius","padding","margin","display","flex-direction","gap","align-items","justify-content","text-align","width","max-width","min-width","line-height","letter-spacing","opacity","border-left","border-bottom","box-shadow","grid-template-columns"];
-    let style="";important.forEach(p=>{const v=cs.getPropertyValue(p);if(v&&v!=="none"&&v!=="normal"&&v!=="0px"&&v!=="rgba(0, 0, 0, 0)")style+=p+":"+v+";"});
-    (dst[i] as HTMLElement).setAttribute("style",style)});
-    /* Fix SVG/canvas charts - convert to images */
-    const svgs=clone.querySelectorAll("svg");
-    svgs.forEach(svg=>{try{const data=new XMLSerializer().serializeToString(svg);const img=document.createElement("img");img.src="data:image/svg+xml;base64,"+btoa(unescape(encodeURIComponent(data)));img.style.cssText="width:100%;max-width:"+svg.getAttribute("width")+"px;height:auto";svg.parentNode?.replaceChild(img,svg)}catch(e){console.warn(e)}});
-    return clone.innerHTML;
-  };
-
-  /* ═══ EXPORT: WORD ═══ */
-  const exportDOCX=()=>{
+  /* ═══ EXPORT: WORD (.docx via docx library + html2canvas for charts) ═══ */
+  const exportDOCX=async()=>{
     if(!pd||!reportContainerRef.current)return;
     setShowExport(false);setExportLoading("word");
     try{
-      const content=captureReportHTML();
-      const html='<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word" xmlns="http://www.w3.org/TR/REC-html40"><head><meta charset="UTF-8"><style>@page{size:A4;margin:1.5cm}body{font-family:Arial,Helvetica,sans-serif;font-size:11pt;color:#333;line-height:1.5}img{max-width:100%!important;height:auto!important}table{border-collapse:collapse;page-break-inside:avoid}td,th{vertical-align:top}</style></head><body>'+content+'<br/><p style="text-align:center;color:#94a3b8;font-size:8pt;margin-top:20pt">Generado por ReporteaJDOR</p></body></html>';
-      const blob=new Blob(["\ufeff"+html],{type:"application/msword"});
-      const url=URL.createObjectURL(blob);const a=document.createElement("a");a.href=url;a.download=(reportSubject||"reporte")+".doc";document.body.appendChild(a);a.click();document.body.removeChild(a);URL.revokeObjectURL(url);
-    }catch(e){console.error("DOCX export error:",e);alert("Error al exportar Word: "+String(e))}
+      const html2canvas=(await import("html2canvas")).default;
+      const docxLib=await import("docx");
+      const{Document:DocxDoc,Packer,Paragraph,TextRun,ImageRun,HeadingLevel,AlignmentType,PageBreak,
+        ExternalHyperlink,PageOrientation}=docxLib;
+      const fileSaver=await import("file-saver");
+      const saveAs=fileSaver.saveAs||fileSaver.default;
+
+      /* Capture each report section as image */
+      const el=reportContainerRef.current;
+      const sectionEls=el.querySelectorAll(":scope > div");
+      const sectionImages:Uint8Array[]=[];
+      const sectionWidths:number[]=[];
+      const sectionHeights:number[]=[];
+      for(let i=0;i<sectionEls.length;i++){
+        const sec=sectionEls[i] as HTMLElement;
+        const canvas=await html2canvas(sec,{scale:2,useCORS:true,logging:false,windowWidth:940,backgroundColor:"#ffffff"});
+        const dataUrl=canvas.toDataURL("image/png");
+        const bin=atob(dataUrl.split(",")[1]);
+        const arr=new Uint8Array(bin.length);
+        for(let j=0;j<bin.length;j++)arr[j]=bin.charCodeAt(j);
+        sectionImages.push(arr);
+        sectionWidths.push(canvas.width);
+        sectionHeights.push(canvas.height);
+      }
+
+      /* Build paragraphs */
+      const children:unknown[]=[];
+      const maxPx=680;/* landscape content width in pixels at 72dpi */
+
+      /* Cover image (first section = banner) */
+      if(sectionImages.length>0){
+        const ratio=sectionHeights[0]/sectionWidths[0];
+        const imgW=maxPx;
+        const imgH=Math.round(imgW*ratio);
+        children.push(new Paragraph({alignment:AlignmentType.CENTER,children:[
+          new ImageRun({data:sectionImages[0],transformation:{width:imgW,height:imgH},type:"png"})
+        ]}));
+      }
+
+      /* Each remaining section as image + editable AI text below */
+      const aiKeyMap:Record<string,{key:string;title:string}>={};
+      ["Resumen Ejecutivo","Temas Clave Destacados","Análisis de Sentimiento","Tendencia del Sentimiento",
+       "Tráfico de Información","Conclusiones","Recomendaciones Estratégicas","Actividad por Hora",
+       "Tráfico Redes Sociales","Tráfico Medios Tradicionales"].forEach(t=>{
+        const keyMap:Record<string,string>={"Resumen Ejecutivo":"resumen","Temas Clave Destacados":"temas",
+          "Análisis de Sentimiento":"sentimiento","Tendencia del Sentimiento":"tendSent",
+          "Tráfico de Información":"picos","Conclusiones":"conclusiones",
+          "Recomendaciones Estratégicas":"recomendaciones","Actividad por Hora":"hora",
+          "Tráfico Redes Sociales":"picosRedes","Tráfico Medios Tradicionales":"picosMedios"};
+        aiKeyMap[t]={key:keyMap[t]||"",title:t};
+      });
+
+      for(let i=1;i<sectionImages.length;i++){
+        /* Page break before each section */
+        children.push(new Paragraph({children:[new PageBreak()]}));
+        /* Section image */
+        const ratio=sectionHeights[i]/sectionWidths[i];
+        const imgW=maxPx;
+        const imgH=Math.round(imgW*ratio);
+        /* Cap height to 70% page height */
+        const maxH=Math.round(maxPx*0.7*(12240/13680));
+        const finalH=Math.min(imgH,maxH);
+        const finalW=imgH>maxH?Math.round(imgW*(finalH/imgH)):imgW;
+        children.push(new Paragraph({alignment:AlignmentType.CENTER,children:[
+          new ImageRun({data:sectionImages[i],transformation:{width:finalW,height:finalH},type:"png"})
+        ]}));
+      }
+
+      /* Appendix: Editable AI texts */
+      children.push(new Paragraph({children:[new PageBreak()]}));
+      children.push(new Paragraph({heading:HeadingLevel.HEADING_1,spacing:{after:200},
+        children:[new TextRun({text:"Anexo: Textos Editables del Análisis",bold:true,size:28,font:"Arial"})]}));
+      children.push(new Paragraph({spacing:{after:200},children:[new TextRun({
+        text:"A continuación se incluyen los textos de análisis en formato editable para su modificación.",
+        size:20,font:"Arial",color:"666666",italics:true})]}));
+
+      const aiSections=[
+        {t:"Resumen Ejecutivo",k:"resumen"},{t:"Temas Clave",k:"temas"},
+        {t:"Tráfico de Información",k:"picos"},{t:"Análisis de Sentimiento",k:"sentimiento"},
+        {t:"Tendencia del Sentimiento",k:"tendSent"},{t:"Conclusiones",k:"conclusiones"},
+        {t:"Recomendaciones Estratégicas",k:"recomendaciones"}
+      ];
+      for(const sec of aiSections){
+        let text=aiTexts[sec.k];if(!text)continue;
+        if(typeof text!=="string")text=String(text);
+        children.push(new Paragraph({heading:HeadingLevel.HEADING_2,spacing:{before:300,after:150},
+          children:[new TextRun({text:sec.t,bold:true,size:24,font:"Arial",color:(brand.primaryColor||"1a1a2e").replace("#","")})]}));
+        const paras=text.split(/\s*\|\|\s*/).filter(Boolean);
+        for(const p of paras){
+          /* Parse ***bold italic***, **bold**, [Ver fuente](url) */
+          const parts=p.split(/(\*\*\*[^*]+\*\*\*|\*\*[^*]+\*\*|\[Ver fuente\]\([^)]+\))/g);
+          const runs:unknown[]=[];
+          for(const part of parts){
+            if(!part)continue;
+            const biMatch=part.match(/^\*\*\*(.+)\*\*\*$/);
+            if(biMatch){runs.push(new TextRun({text:biMatch[1],bold:true,italics:true,size:21,font:"Arial",color:(brand.accentColor||"0f3460").replace("#","")}));continue}
+            const bMatch=part.match(/^\*\*(.+)\*\*$/);
+            if(bMatch){runs.push(new TextRun({text:bMatch[1],bold:true,size:21,font:"Arial"}));continue}
+            const linkMatch=part.match(/\[Ver fuente\]\(([^)]+)\)/);
+            if(linkMatch){runs.push(new ExternalHyperlink({children:[new TextRun({text:" Ver fuente ",style:"Hyperlink",size:18,font:"Arial"})],link:linkMatch[1]}));continue}
+            runs.push(new TextRun({text:part,size:21,font:"Arial"}));
+          }
+          children.push(new Paragraph({spacing:{after:120},children:runs as InstanceType<typeof TextRun>[]}));
+        }
+      }
+
+      /* Footer */
+      children.push(new Paragraph({spacing:{before:400},alignment:AlignmentType.CENTER,
+        children:[new TextRun({text:"Generado por ReporteaJDOR",size:16,font:"Arial",color:"94a3b8"})]}));
+
+      const doc=new DocxDoc({
+        sections:[{
+          properties:{
+            page:{
+              size:{width:15840,height:12240,orientation:PageOrientation.LANDSCAPE},
+              margin:{top:720,right:1080,bottom:720,left:1080}
+            }
+          },
+          children:children as InstanceType<typeof Paragraph>[]
+        }]
+      });
+      const buf=await Packer.toBlob(doc);
+      saveAs(buf,(reportSubject||"reporte")+".docx");
+    }catch(e){console.error("DOCX export error:",e);alert("Error al exportar Word: "+String(e)+"\nInstala: npm install docx file-saver html2canvas")}
     setExportLoading("");
   };
 
