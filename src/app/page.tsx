@@ -498,225 +498,244 @@ FORMATO: JSON válido sin markdown ni backticks. NO uses saltos de línea dentro
   const reportContainerRef=useRef<HTMLDivElement>(null);
 
   /* ═══ EXPORT: WORD (HTML-based, zero dependencies) ═══ */
-  /* ═══ EXPORT: WORD (.docx) ═══ */
+  /* ═══ EXPORT: WORD (.docx) — v32 complete rewrite ═══ */
   const exportDOCX=async()=>{
     if(!pd||!reportContainerRef.current)return;
     setShowExport(false);setExportLoading("word");
     try{
       const html2canvas=(await import("html2canvas")).default;
-      const docxLib=await import("docx");
+      const D=await import("docx");
       const{Document:DocxDoc,Packer,Paragraph,TextRun,ImageRun,AlignmentType,PageBreak,
-        ExternalHyperlink,PageOrientation,Table,TableRow,TableCell,WidthType,
-        ShadingType}=docxLib;
+        ExternalHyperlink,PageOrientation,Table,TableRow,TableCell,WidthType,ShadingType}=D;
       const fileSaver=await import("file-saver");
       const saveAs=fileSaver.saveAs||fileSaver.default;
-
       const el=reportContainerRef.current;
       const acHex=(brand.accentColor||"#0f3460").replace("#","");
       const prHex=(brand.primaryColor||"#1a1a2e").replace("#","");
 
-      /* Helper: capture an element as PNG Uint8Array */
-      const captureEl=async(elem:HTMLElement):Promise<{data:Uint8Array;w:number;h:number}>=>{
-        const canvas=await html2canvas(elem,{scale:2,useCORS:true,logging:false,windowWidth:940,backgroundColor:"#ffffff"});
-        const dataUrl=canvas.toDataURL("image/png");
-        const bin=atob(dataUrl.split(",")[1]);
-        const arr=new Uint8Array(bin.length);
-        for(let j=0;j<bin.length;j++)arr[j]=bin.charCodeAt(j);
-        return{data:arr,w:canvas.width,h:canvas.height};
+      /* ── Helpers ── */
+      const capEl=async(e:HTMLElement,bg="#ffffff"):Promise<{d:Uint8Array;w:number;h:number}>=>{
+        const cv=await html2canvas(e,{scale:2,useCORS:true,logging:false,windowWidth:940,backgroundColor:bg});
+        const du=cv.toDataURL("image/png");const b=atob(du.split(",")[1]);
+        const a=new Uint8Array(b.length);for(let j=0;j<b.length;j++)a[j]=b.charCodeAt(j);
+        return{d:a,w:cv.width,h:cv.height};
       };
-
-      /* Helper: image paragraph scaled to max width */
-      const imgPara=(img:{data:Uint8Array;w:number;h:number},maxW=680)=>{
-        const ratio=img.h/img.w;const w=Math.min(maxW,680);const h=Math.round(w*ratio);
+      const imgP=(img:{d:Uint8Array;w:number;h:number},maxW=680)=>{
+        const r=img.h/img.w;const w=Math.min(maxW,680);const h=Math.round(w*r);
         return new Paragraph({alignment:AlignmentType.CENTER,spacing:{after:100},
-          children:[new ImageRun({data:img.data,transformation:{width:w,height:h},type:"png"})]});
+          children:[new ImageRun({data:img.d,transformation:{width:w,height:h},type:"png"})]});
       };
-
-      /* Helper: parse AI text into runs with bold/italic/links */
-      const aiRuns=(text:string)=>{
+      const mkRuns=(text:string)=>{
         if(!text)return[new TextRun({text:"",size:24,font:"Arial"})];
-        const clean=typeof text==="string"?text:String(text);
-        const parts=clean.split(/(\*\*\*[^*]+\*\*\*|\*\*[^*]+\*\*|\[Ver fuente\]\([^)]+\))/g);
+        const t=typeof text==="string"?text:String(text);
+        const parts=t.split(/(\*\*\*[^*]+\*\*\*|\*\*[^*]+\*\*|\[Ver fuente\]\([^)]+\))/g);
         const runs:(InstanceType<typeof TextRun>|InstanceType<typeof ExternalHyperlink>)[]=[];
-        for(const part of parts){
-          if(!part)continue;
-          const biM=part.match(/^\*\*\*(.+)\*\*\*$/);
-          if(biM){runs.push(new TextRun({text:biM[1],bold:true,italics:true,size:24,font:"Arial",color:acHex}));continue}
-          const bM=part.match(/^\*\*(.+)\*\*$/);
-          if(bM){runs.push(new TextRun({text:bM[1],bold:true,size:24,font:"Arial"}));continue}
-          const lM=part.match(/\[Ver fuente\]\(([^)]+)\)/);
-          if(lM){runs.push(new ExternalHyperlink({children:[new TextRun({text:" Ver fuente ",style:"Hyperlink",size:20,font:"Arial"})],link:lM[1]}));continue}
-          runs.push(new TextRun({text:part,size:24,font:"Arial"}));
+        for(const p of parts){
+          if(!p)continue;
+          const bi=p.match(/^\*\*\*(.+)\*\*\*$/);
+          if(bi){runs.push(new TextRun({text:bi[1],bold:true,italics:true,size:24,font:"Arial",color:acHex}));continue}
+          const bo=p.match(/^\*\*(.+)\*\*$/);
+          if(bo){runs.push(new TextRun({text:bo[1],bold:true,size:24,font:"Arial"}));continue}
+          const lk=p.match(/\[Ver fuente\]\(([^)]+)\)/);
+          if(lk){runs.push(new ExternalHyperlink({children:[new TextRun({text:" Ver fuente ",style:"Hyperlink",size:20,font:"Arial"})],link:lk[1]}));continue}
+          runs.push(new TextRun({text:p,size:24,font:"Arial"}));
         }
         return runs;
       };
-
-      /* Helper: section heading */
-      const heading=(text:string)=>new Paragraph({spacing:{before:240,after:120},
+      const hd=(text:string)=>new Paragraph({spacing:{before:200,after:80},alignment:AlignmentType.LEFT,
         children:[new TextRun({text,bold:true,size:32,font:"Arial",color:prHex})]});
+      const aiParas=(text:string|undefined)=>{
+        if(!text)return[];
+        const t=typeof text==="string"?text:String(text);
+        return t.split(/\s*\|\|\s*/).filter(Boolean).map(p=>
+          new Paragraph({spacing:{after:80},alignment:AlignmentType.JUSTIFIED,children:mkRuns(p)}));
+      };
+      const bl=()=>new Paragraph({spacing:{after:80},children:[new TextRun({text:"",size:24})]});
 
-      /* Helper: blank line */
-      const blank=()=>new Paragraph({spacing:{after:100},children:[new TextRun({text:"",size:24})]});
+      /* ── Capture chart only (hide title bar + AIBlock) ── */
+      const capChart=async(sec:HTMLElement):Promise<{d:Uint8Array;w:number;h:number}|null>=>{
+        /* Find title bar (first child with h2) and AIBlocks */
+        const titleBar=sec.querySelector(":scope > div:first-child") as HTMLElement|null;
+        const aiBlocks=sec.querySelectorAll("[class*='rounded-xl'][class*='p-4']") as NodeListOf<HTMLElement>;
+        const hidden:HTMLElement[]=[];
+        /* Hide title bar */
+        if(titleBar&&titleBar.querySelector("h2")){titleBar.style.display="none";hidden.push(titleBar)}
+        /* Hide AI blocks (they have "ANÁLISIS IA" text) */
+        aiBlocks.forEach(ab=>{if(ab.textContent?.includes("ANÁLISIS IA")){ab.style.display="none";hidden.push(ab)}});
+        /* Check if anything visible remains */
+        const remaining=sec.querySelector(".recharts-responsive-container,canvas,svg,.bg-gray-50,.grid,.flex");
+        let result=null;
+        if(remaining){try{result=await capEl(sec)}catch(e){console.warn(e)}}
+        /* Restore */
+        hidden.forEach(h=>h.style.display="");
+        return result;
+      };
 
-      /* ─── BUILD DOCUMENT ─── */
-      const children:unknown[]=[];
-      const sections=el.querySelectorAll(":scope > div");
+      /* ── Section→AI key mapping ── */
+      const aiMap:Record<string,string>={
+        "Distribución por Red Social":"fuentes","Distribución por Tipo de Medio":"fuentes","Distribución por Fuente":"fuentes",
+        "Tendencia de Conversación":"picos","Tráfico de Información":"picos",
+        "Tráfico Redes Sociales":"picosRedes","Tráfico – Redes Sociales":"picosRedes",
+        "Tráfico Medios Tradicionales":"picosMedios","Tráfico – Medios Tradicionales":"picosMedios",
+        "Actividad por Hora":"hora","Actividad por Hora (redes)":"hora",
+        "Análisis de Sentimiento":"sentimiento",
+        "Tendencia del Sentimiento":"tendSent",
+        "Distribución de Notas por Tier":"tier","Distribución de Notas por Tier (medios)":"tier",
+        "Top 5 Medios con Más Noticias":"top5med","Top 5 Medios con Más Noticias (medios)":"top5med",
+        "Distribución por Tipo de Nota":"tipoNota","Distribución por Tipo de Nota (medios)":"tipoNota",
+        "Distribución por Estado":"estado","Distribución por Estado (medios)":"estado",
+        "Top Publicaciones":"topPub","Menciones Populares por Sentimiento":"topPub",
+        "Resumen Ejecutivo":"resumen","Conclusiones":"conclusiones","Recomendaciones Estratégicas":"recomendaciones"
+      };
+      const getAiKey=(title:string):string=>{
+        for(const[prefix,key]of Object.entries(aiMap)){if(title.includes(prefix))return key}
+        return "";
+      };
 
-      /* PAGE 1: Cover (banner) - centered */
-      if(sections.length>0){
-        const bannerImg=await captureEl(sections[0] as HTMLElement);
-        const ratio=bannerImg.h/bannerImg.w;const bW=660;const bH=Math.round(bW*ratio);
-        /* Add vertical spacing to center */
-        children.push(new Paragraph({spacing:{before:2400},children:[new TextRun("")]}));
-        children.push(new Paragraph({alignment:AlignmentType.CENTER,
-          children:[new ImageRun({data:bannerImg.data,transformation:{width:bW,height:bH},type:"png"})]}));
-        children.push(new Paragraph({children:[new PageBreak()]}));
+      /* ── Word table builder for Top5 ── */
+      const bdr={style:"single" as const,size:1,color:"E2E8F0"};
+      const bds={top:bdr,bottom:bdr,left:bdr,right:bdr};
+      const cm={top:50,bottom:50,left:80,right:80};
+      const hdrBg={fill:"F8FAFC",type:ShadingType.CLEAR};
+      const mkT5=(items:Top5Item[],label:string,title?:string)=>{
+        const res:unknown[]=[];
+        if(title)res.push(new Paragraph({spacing:{before:100,after:40},children:[new TextRun({text:title,bold:true,size:22,font:"Arial"})]}));
+        const rows=[new TableRow({children:[
+          new TableCell({borders:bds,shading:hdrBg,margins:cm,width:{size:350,type:WidthType.DXA},children:[new Paragraph({children:[new TextRun({text:"#",bold:true,size:18,font:"Arial"})]})]}),
+          new TableCell({borders:bds,shading:hdrBg,margins:cm,width:{size:3200,type:WidthType.DXA},children:[new Paragraph({children:[new TextRun({text:"Nombre",bold:true,size:18,font:"Arial"})]})]}),
+          new TableCell({borders:bds,shading:hdrBg,margins:cm,width:{size:1200,type:WidthType.DXA},children:[new Paragraph({alignment:AlignmentType.RIGHT,children:[new TextRun({text:label,bold:true,size:18,font:"Arial"})]})]}),
+          new TableCell({borders:bds,shading:hdrBg,margins:cm,width:{size:600,type:WidthType.DXA},children:[new Paragraph({alignment:AlignmentType.CENTER,children:[new TextRun({text:"Link",bold:true,size:18,font:"Arial"})]})]})
+        ]})];
+        items.forEach((it,idx)=>{
+          const lk=it.link&&it.link!=="undefined"?
+            [new ExternalHyperlink({children:[new TextRun({text:"Ver",style:"Hyperlink",size:18,font:"Arial"})],link:it.link})]
+            :[new TextRun({text:"—",size:18,color:"CCCCCC"})];
+          rows.push(new TableRow({children:[
+            new TableCell({borders:bds,margins:cm,width:{size:350,type:WidthType.DXA},children:[new Paragraph({children:[new TextRun({text:String(idx+1),bold:true,size:18,font:"Arial"})]})]}),
+            new TableCell({borders:bds,margins:cm,width:{size:3200,type:WidthType.DXA},children:[new Paragraph({children:[new TextRun({text:it.nombre+(it.titulo?" — "+it.titulo:""),size:18,font:"Arial"})]})]}),
+            new TableCell({borders:bds,margins:cm,width:{size:1200,type:WidthType.DXA},children:[new Paragraph({alignment:AlignmentType.RIGHT,children:[new TextRun({text:label==="Costo"||label==="AVE"?fmtM(it.valor):fmt(it.valor),bold:true,size:18,font:"Arial",color:acHex})]})]}),
+            new TableCell({borders:bds,margins:cm,width:{size:600,type:WidthType.DXA},children:[new Paragraph({alignment:AlignmentType.CENTER,children:lk as InstanceType<typeof TextRun>[]})]})
+          ]}));
+        });
+        res.push(new Table({width:{size:5350,type:WidthType.DXA},columnWidths:[350,3200,1200,600],rows}));
+        return res;
+      };
+
+      /* ── Menciones table builder ── */
+      const mkMen=(items:{autor:string;contenido:string;link:string;fuente:string;alcance:number}[],color:string,title:string)=>{
+        const res:unknown[]=[];
+        res.push(new Paragraph({spacing:{before:100,after:40},children:[new TextRun({text:title,bold:true,size:22,font:"Arial",color:color.replace("#","")})]}));
+        items.forEach((it)=>{
+          const lk=it.link?[new ExternalHyperlink({children:[new TextRun({text:"Ver original",style:"Hyperlink",size:16,font:"Arial"})],link:it.link})]
+            :[new TextRun({text:"",size:16})];
+          res.push(new Paragraph({spacing:{after:20},border:{top:{style:"single" as const,size:1,color:color.replace("#","")+"40"}},
+            children:[new TextRun({text:it.autor,bold:true,size:20,font:"Arial"}),
+              new TextRun({text:" — "+it.fuente,size:18,font:"Arial",color:"94A3B8"}),
+              new TextRun({text:it.alcance>0?" | "+fmt(it.alcance)+" alcance":"",size:18,font:"Arial",color:"94A3B8"})]}));
+          res.push(new Paragraph({spacing:{after:10},children:[new TextRun({text:it.contenido.substring(0,200),size:18,font:"Arial",color:"64748B"})]}));
+          res.push(new Paragraph({spacing:{after:60},children:lk as InstanceType<typeof TextRun>[]}));
+        });
+        return res;
+      };
+
+      /* ══════════════════════ BUILD DOCUMENT ══════════════════════ */
+      const ch:unknown[]=[];
+      const secs=el.querySelectorAll(":scope > div");
+
+      /* PAGE 1: Cover banner */
+      if(secs.length>0){
+        const bannerImg=await capEl(secs[0] as HTMLElement);
+        /* 7.95cm≈226pt, 25.35cm≈719pt → in pixels at 72dpi ≈ 226×3, 719×1 but we use actual ratio */
+        const bW=640;const bH=Math.round(640*(bannerImg.h/bannerImg.w));
+        /* Center vertically */
+        const vPad=Math.max(800,Math.round((5000-bH*5)/2));
+        ch.push(new Paragraph({spacing:{before:vPad},children:[new TextRun("")]}));
+        ch.push(new Paragraph({alignment:AlignmentType.CENTER,
+          children:[new ImageRun({data:bannerImg.d,transformation:{width:bW,height:bH},type:"png"})]}));
+        ch.push(new Paragraph({children:[new PageBreak()]}));
       }
 
-      /* PAGE 2+: KPIs section as image */
-      if(sections.length>1){
-        const kpiImg=await captureEl(sections[1] as HTMLElement);
-        children.push(imgPara(kpiImg));
-        children.push(blank());
-      }
+      /* REMAINING: process each section */
+      for(let i=1;i<secs.length;i++){
+        const sec=secs[i] as HTMLElement;
+        const h2=sec.querySelector("h2");
+        const secTitle=h2?.textContent?.trim()||"";
 
-      /* REMAINING SECTIONS: chart as image + text */
-      const secMap=new Map<string,{el:HTMLElement;idx:number}>();
-      for(let i=2;i<sections.length;i++){
-        const sec=sections[i] as HTMLElement;
-        /* Find section title from the heading element */
-        const titleEl=sec.querySelector("h3,h2,[class*='font-bold']") as HTMLElement|null;
-        const titleText=titleEl?.textContent?.trim()||"Section "+i;
-        secMap.set(titleText,{el:sec,idx:i});
-      }
+        /* ── Section title as text ── */
+        if(secTitle)ch.push(hd(secTitle));
 
-      for(let i=2;i<sections.length;i++){
-        const sec=sections[i] as HTMLElement;
-        const titleEl=sec.querySelector("h3,h2,.text-lg,.font-extrabold") as HTMLElement|null;
-        const secTitle=titleEl?.textContent?.trim()||"";
-
-        /* Section title as editable text */
-        if(secTitle)children.push(heading(secTitle));
-
-        /* Check if this is a special text-only section */
-        const isResumen=secTitle.includes("Resumen");
-        const isTemas=secTitle.includes("Temas");
-        const isConclusion=secTitle.includes("Conclusiones");
-        const isRecomendacion=secTitle.includes("Recomendaciones");
+        /* ── Determine section type ── */
+        const isTextOnly=["Resumen","Conclusiones","Recomendaciones"].some(k=>secTitle.includes(k));
+        const isTemas=secTitle.includes("Temas Clave");
         const isTopPub=secTitle.includes("Top Publicaciones");
+        const isMenciones=secTitle.includes("Menciones Populares");
+        const isIndicadoresSent=secTitle.includes("Indicadores de Sentimiento");
 
         if(isTemas){
-          /* Temas: parse JSON and render as numbered items */
-          const temasData=aiTemas(pd,aiTexts);
-          for(let ti=0;ti<temasData.length;ti++){
-            const t=temasData[ti];
-            children.push(new Paragraph({spacing:{before:160,after:60},
-              children:[new TextRun({text:(ti+1)+". "+t.tema,bold:true,size:24,font:"Arial"})]}));
-            children.push(new Paragraph({spacing:{after:120},children:aiRuns(t.detalle)}));
+          /* ── Temas Clave: editable numbered text ── */
+          const temas=aiTemas(pd,aiTexts);
+          for(let ti=0;ti<temas.length;ti++){
+            ch.push(new Paragraph({spacing:{before:120,after:40},children:[
+              new TextRun({text:(ti+1)+". "+temas[ti].tema,bold:true,size:24,font:"Arial"})]}));
+            ch.push(new Paragraph({spacing:{after:80},alignment:AlignmentType.JUSTIFIED,children:mkRuns(temas[ti].detalle)}));
           }
-          /* Also add AI analysis if exists */
-          const aiText=aiTexts.temas;
-          if(!aiText){/* temas already rendered above */}
         }else if(isTopPub){
-          /* Top Publicaciones: render as Word tables */
-          const border={style:"single" as const,size:1,color:"E2E8F0"};
-          const borders={top:border,bottom:border,left:border,right:border};
-          const hdrShading={fill:"F8FAFC",type:ShadingType.CLEAR};
-          const cellM={top:60,bottom:60,left:80,right:80};
+          /* ── Top Publicaciones: Word tables ── */
+          const aiKey=getAiKey(secTitle);
+          ch.push(...aiParas(aiTexts[aiKey]));
 
-          /* General Top 5 */
-          if(pd.top5AlcGeneral.length>0){
-            children.push(new Paragraph({spacing:{before:120,after:60},
-              children:[new TextRun({text:"Top 5 General por Alcance",bold:true,size:24,font:"Arial"})]}));
-            const rows=[new TableRow({children:[
-              new TableCell({borders,shading:hdrShading,margins:cellM,width:{size:400,type:WidthType.DXA},children:[new Paragraph({children:[new TextRun({text:"#",bold:true,size:20,font:"Arial"})]})]}),
-              new TableCell({borders,shading:hdrShading,margins:cellM,width:{size:4000,type:WidthType.DXA},children:[new Paragraph({children:[new TextRun({text:"Nombre",bold:true,size:20,font:"Arial"})]})]}),
-              new TableCell({borders,shading:hdrShading,margins:cellM,width:{size:1500,type:WidthType.DXA},children:[new Paragraph({alignment:AlignmentType.RIGHT,children:[new TextRun({text:"Alcance",bold:true,size:20,font:"Arial"})]})]}),
-              new TableCell({borders,shading:hdrShading,margins:cellM,width:{size:800,type:WidthType.DXA},children:[new Paragraph({alignment:AlignmentType.CENTER,children:[new TextRun({text:"Link",bold:true,size:20,font:"Arial"})]})]})
-            ]})];
-            pd.top5AlcGeneral.forEach((item,idx)=>{
-              const linkCell=item.link&&item.link!=="undefined"?
-                [new ExternalHyperlink({children:[new TextRun({text:"Ver",style:"Hyperlink",size:20,font:"Arial"})],link:item.link})]
-                :[new TextRun({text:"—",size:20,font:"Arial",color:"CCCCCC"})];
-              rows.push(new TableRow({children:[
-                new TableCell({borders,margins:cellM,width:{size:400,type:WidthType.DXA},children:[new Paragraph({children:[new TextRun({text:String(idx+1),bold:true,size:20,font:"Arial"})]})]}),
-                new TableCell({borders,margins:cellM,width:{size:4000,type:WidthType.DXA},children:[new Paragraph({children:[new TextRun({text:item.nombre+(item.titulo?" — "+item.titulo:""),size:20,font:"Arial"})]})]}),
-                new TableCell({borders,margins:cellM,width:{size:1500,type:WidthType.DXA},children:[new Paragraph({alignment:AlignmentType.RIGHT,children:[new TextRun({text:fmt(item.valor),bold:true,size:20,font:"Arial",color:acHex})]})]}),
-                new TableCell({borders,margins:cellM,width:{size:800,type:WidthType.DXA},children:[new Paragraph({alignment:AlignmentType.CENTER,children:linkCell as unknown as InstanceType<typeof TextRun>[]})]})
-              ]}));
-            });
-            children.push(new Table({width:{size:6700,type:WidthType.DXA},columnWidths:[400,4000,1500,800],rows}));
+          /* General tables */
+          if(pd.top5AlcGeneral.length>0)ch.push(...mkT5(pd.top5AlcGeneral,"Alcance","Top 5 General por Alcance") as InstanceType<typeof Paragraph>[]);
+          if(pd.totalCosto>0&&pd.top5CostGeneral.length>0)ch.push(...mkT5(pd.top5CostGeneral,pd.dataType==="social"?"AVE":"Costo","Top 5 General por "+(pd.dataType==="social"?"AVE":"Costo")) as InstanceType<typeof Paragraph>[]);
+          ch.push(bl());
+
+          /* Per-source tables */
+          const sources=pd.dataType==="media"?VM:pd.dataType==="social"?VS:[...VS,...VM];
+          for(const src of sources){
+            const alcItems=pd.top5AlcPorFuente[src];
+            const costItems=pd.top5CostPorFuente[src];
+            if(!alcItems?.length&&!costItems?.length)continue;
+            ch.push(new Paragraph({spacing:{before:120,after:40},children:[
+              new TextRun({text:src,bold:true,size:24,font:"Arial"})]}));
+            if(alcItems?.length)ch.push(...mkT5(alcItems,"Alcance","Por Alcance") as InstanceType<typeof Paragraph>[]);
+            if(costItems?.length&&pd.totalCosto>0)ch.push(...mkT5(costItems,pd.dataType==="social"?"AVE":"Costo","Por "+(pd.dataType==="social"?"AVE":"Costo")) as InstanceType<typeof Paragraph>[]);
+            ch.push(bl());
           }
-          /* AI analysis for topPub */
-          const topAi=aiTexts.topPub;
-          if(topAi){const paras=(typeof topAi==="string"?topAi:String(topAi)).split(/\s*\|\|\s*/).filter(Boolean);
-            paras.forEach(p=>{children.push(new Paragraph({spacing:{after:80},children:aiRuns(p)}))});
-          }
-        }else if(isResumen||isConclusion||isRecomendacion){
-          /* Pure AI text sections */
-          const keyMap:Record<string,string>={"Resumen":"resumen","Conclusiones":"conclusiones","Recomendaciones":"recomendaciones"};
-          const k=Object.entries(keyMap).find(([prefix])=>secTitle.includes(prefix));
-          const aiText=k?aiTexts[k[1]]:"";
-          if(aiText){
-            const t=typeof aiText==="string"?aiText:String(aiText);
-            const paras=t.split(/\s*\|\|\s*/).filter(Boolean);
-            paras.forEach(p=>{children.push(new Paragraph({spacing:{after:100},children:aiRuns(p)}))});
-          }
+        }else if(isMenciones){
+          /* ── Menciones Populares: Word tables (positive + negative) ── */
+          if(pd.topPositivas.length>0)ch.push(...mkMen(pd.topPositivas,brand.positiveColor,"Top 5 Positivas") as InstanceType<typeof Paragraph>[]);
+          ch.push(bl());
+          if(pd.topNegativas.length>0)ch.push(...mkMen(pd.topNegativas,brand.negativeColor,"Top 5 Negativas") as InstanceType<typeof Paragraph>[]);
+        }else if(isTextOnly){
+          /* ── Pure text sections ── */
+          const aiKey=getAiKey(secTitle);
+          ch.push(...aiParas(aiTexts[aiKey]));
         }else{
-          /* Chart sections: capture chart as image, add AI text below */
-          /* Find chart container (recharts-responsive-container or similar) */
-          const chartEl=sec.querySelector(".recharts-responsive-container,.recharts-wrapper,svg[class*='recharts']") as HTMLElement|null;
-          const vizEl=chartEl||(sec.querySelector("[class*='grid'],[class*='flex']") as HTMLElement|null);
+          /* ── Chart/visual sections: capture image (without title/AI), then add AI text ── */
+          const chartImg=await capChart(sec);
+          if(chartImg)ch.push(imgP(chartImg));
 
-          if(vizEl){
-            try{
-              const vizImg=await captureEl(sec);
-              children.push(imgPara(vizImg));
-            }catch(e){console.warn("Chart capture failed:",e)}
-          }else{
-            /* No chart - capture whole section as image */
-            try{
-              const secImg=await captureEl(sec);
-              children.push(imgPara(secImg));
-            }catch(e){console.warn("Section capture failed:",e)}
-          }
-
-          /* Add corresponding AI text */
-          const aiKeyMap:Record<string,string>={
-            "Distribución":"fuentes","Tendencia de Conversación":"picos","Tráfico de Información":"picos",
-            "Actividad por Hora":"hora","Indicadores de Sentimiento":"sentimiento",
-            "Análisis de Sentimiento":"sentimiento","Tendencia del Sentimiento":"tendSent",
-            "Distribución de Notas por Tier":"tier","Top 5 Medios":"top5med",
-            "Distribución por Tipo de Nota":"tipoNota","Distribución por Estado":"estado",
-            "Menciones Populares":"topPub","Tráfico Redes":"picosRedes","Tráfico Medios":"picosMedios"
-          };
-          const matchedKey=Object.entries(aiKeyMap).find(([prefix])=>secTitle.includes(prefix));
-          if(matchedKey){
-            const aiText=aiTexts[matchedKey[1]];
-            if(aiText){
-              const t=typeof aiText==="string"?aiText:String(aiText);
-              const paras=t.split(/\s*\|\|\s*/).filter(Boolean);
-              paras.forEach(p=>{children.push(new Paragraph({spacing:{after:80},children:aiRuns(p)}))});
-            }
+          /* Add AI text (skip for Indicadores de Sentimiento) */
+          if(!isIndicadoresSent){
+            const aiKey=getAiKey(secTitle);
+            if(aiKey)ch.push(...aiParas(aiTexts[aiKey]));
           }
         }
-        children.push(blank());
+        ch.push(bl());
       }
 
       /* Footer */
-      children.push(new Paragraph({spacing:{before:300},alignment:AlignmentType.CENTER,
+      ch.push(new Paragraph({spacing:{before:200},alignment:AlignmentType.CENTER,
         children:[new TextRun({text:"Generado por ReporteaJDOR",size:16,font:"Arial",color:"94a3b8"})]}));
 
       const doc=new DocxDoc({
-        styles:{default:{document:{run:{font:"Arial",size:24},paragraph:{spacing:{line:240}}}}},
+        styles:{default:{document:{run:{font:"Arial",size:24},paragraph:{spacing:{line:240},alignment:AlignmentType.JUSTIFIED}}}},
         sections:[{
-          properties:{
-            page:{
-              size:{width:15840,height:12240,orientation:PageOrientation.LANDSCAPE},
-              margin:{top:720,right:900,bottom:720,left:900}
-            }
-          },
-          children:children as InstanceType<typeof Paragraph>[]
+          properties:{page:{
+            size:{width:15840,height:12240,orientation:PageOrientation.LANDSCAPE},
+            margin:{top:720,right:900,bottom:720,left:900}
+          }},
+          children:ch as InstanceType<typeof Paragraph>[]
         }]
       });
       const buf=await Packer.toBlob(doc);
