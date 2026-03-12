@@ -515,8 +515,16 @@ FORMATO: JSON válido sin markdown ni backticks. NO uses saltos de línea dentro
       const prHex=hex6(brand.primaryColor||"1a1a2e");
 
       /* ── Helpers ── */
-      const capEl=async(e:HTMLElement,bg="#ffffff",ww=940):Promise<{d:Uint8Array;w:number;h:number}>=>{
-        const cv=await html2canvas(e,{scale:3,useCORS:true,logging:false,windowWidth:Math.max(ww,940),backgroundColor:bg});
+      const capEl=async(e:HTMLElement,bg="#ffffff"):Promise<{d:Uint8Array;w:number;h:number}>=>{
+        /* Temporarily remove overflow-hidden to prevent clipping */
+        const origOverflow=e.style.overflow;e.style.overflow="visible";
+        const parent=e.parentElement;const parentOverflow=parent?parent.style.overflow:"";
+        if(parent)parent.style.overflow="visible";
+        /* Use actual rendered width */
+        const actualW=Math.max(e.scrollWidth,e.offsetWidth,940);
+        const cv=await html2canvas(e,{scale:3,useCORS:true,logging:false,windowWidth:actualW+40,width:actualW,backgroundColor:bg});
+        /* Restore */
+        e.style.overflow=origOverflow;if(parent)parent.style.overflow=parentOverflow;
         const du=cv.toDataURL("image/png");const b=atob(du.split(",")[1]);
         const a=new Uint8Array(b.length);for(let j=0;j<b.length;j++)a[j]=b.charCodeAt(j);
         return{d:a,w:cv.width,h:cv.height};
@@ -573,8 +581,7 @@ FORMATO: JSON válido sin markdown ni backticks. NO uses saltos de línea dentro
         });
         let result:null|{d:Uint8Array;w:number;h:number}=null;
         try{
-          const w=sec.scrollWidth||sec.offsetWidth||940;
-          result=await capEl(sec,"#ffffff",w);
+          result=await capEl(sec,"#ffffff");
         }catch(e){console.warn("capChart error:",e)}
         hidden.forEach(h=>h.style.display="");
         return result;
@@ -711,8 +718,8 @@ FORMATO: JSON válido sin markdown ni backticks. NO uses saltos de línea dentro
           if(tpText)ch.push(...aiParas(tpText));
 
           /* General tables */
-          if(pd.top5AlcGeneral.length>0)ch.push(...mkT5(pd.top5AlcGeneral,"Alcance","Top 5 General por Alcance") as InstanceType<typeof Paragraph>[]);
-          if(pd.totalCosto>0&&pd.top5CostGeneral.length>0)ch.push(...mkT5(pd.top5CostGeneral,pd.dataType==="social"?"AVE":"Costo","Top 5 General por "+(pd.dataType==="social"?"AVE":"Costo")) as InstanceType<typeof Paragraph>[]);
+          if(hasAlcData)ch.push(...mkT5(pd.top5AlcGeneral,"Alcance","Top 5 General por Alcance") as InstanceType<typeof Paragraph>[]);
+          if(hasCostData&&pd.top5CostGeneral.length>0)ch.push(...mkT5(pd.top5CostGeneral,costLabel,"Top 5 General por "+costLabel) as InstanceType<typeof Paragraph>[]);
           ch.push(bl());
 
           /* Per-source tables */
@@ -723,8 +730,8 @@ FORMATO: JSON válido sin markdown ni backticks. NO uses saltos de línea dentro
             if(!alcItems?.length&&!costItems?.length)continue;
             ch.push(new Paragraph({spacing:{before:120,after:40},children:[
               new TextRun({text:src,bold:true,size:24,font:"Arial"})]}));
-            if(alcItems?.length)ch.push(...mkT5(alcItems,"Alcance","Por Alcance") as InstanceType<typeof Paragraph>[]);
-            if(costItems?.length&&pd.totalCosto>0)ch.push(...mkT5(costItems,pd.dataType==="social"?"AVE":"Costo","Por "+(pd.dataType==="social"?"AVE":"Costo")) as InstanceType<typeof Paragraph>[]);
+            if(hasAlcData&&alcItems?.length)ch.push(...mkT5(alcItems,"Alcance","Por Alcance") as InstanceType<typeof Paragraph>[]);
+            if(hasCostData&&costItems?.length)ch.push(...mkT5(costItems,costLabel,"Por "+costLabel) as InstanceType<typeof Paragraph>[]);
             ch.push(bl());
           }
         }else if(isMenciones){
@@ -908,6 +915,9 @@ FORMATO: JSON válido sin markdown ni backticks. NO uses saltos de línea dentro
   const sOn=(s:string)=>tab==="social"?socEnabled[s]!==false:tab==="media"?medEnabled[s]!==false:fusEnabled[s]!==false;
   const toggleSec=(s:string)=>{if(tab==="social")setSocEnabled(p=>({...p,[s]:!p[s]}));else if(tab==="media")setMedEnabled(p=>({...p,[s]:!p[s]}));else setFusEnabled(p=>({...p,[s]:!p[s]}))};
   const curOrder=tab==="social"?socOrder:tab==="media"?medOrder:fusOrder;
+  const hasAlcData=pd?pd.top5AlcGeneral.some(x=>x.valor>0):false;
+  const hasCostData=pd?pd.top5CostGeneral.some(x=>x.valor>0):false;
+  const costLabel=pd?.dataType==="social"?"AVE":"Costo";
   const setCurOrder=tab==="social"?setSocOrder:tab==="media"?setMedOrder:setFusOrder;
   const curEnabled=tab==="social"?socEnabled:tab==="media"?medEnabled:fusEnabled;
   const handleDragStart=(i:number)=>{dragRef.current=i};
@@ -1036,7 +1046,7 @@ FORMATO: JSON válido sin markdown ni backticks. NO uses saltos de línea dentro
                 <div style={{order:curOrder.indexOf("Top 5 Medios con Más Noticias")}}>{sOn("Top 5 Medios con Más Noticias")&&<Sec title={secNum("Top 5 Medios con Más Noticias")+". Top 5 Medios con Más Noticias (medios)"} icon={<Trophy size={18} color={brand.accentColor}/>} brand={brand}><GenChart data={pd.top5Medios.map(m=>({name:m.nombre,value:m.total}))} brand={brand} colors={genPalette(brand.primaryColor,brand.secondaryColor,pd.top5Medios.length)} vertical={false}/><div className="mt-4"><AIBlock text={aiT("top5med",aiTop5Med(pd))} brand={brand} loading={aiLoading}/></div></Sec>}</div>
                 <div style={{order:curOrder.indexOf("Distribución por Tipo de Nota")}}>{sOn("Distribución por Tipo de Nota")&&<Sec title={secNum("Distribución por Tipo de Nota")+". Distribución por Tipo de Nota (medios)"} icon={<List size={18} color={brand.accentColor}/>} brand={brand}><GenChart data={pd.tipoNotaData} brand={brand} colors={genPalette(brand.primaryColor,brand.secondaryColor,pd.tipoNotaData.length)}/><div className="mt-4"><AIBlock text={aiT("tipoNota",aiTipoNota(pd))} brand={brand} loading={aiLoading}/></div></Sec>}</div>
                 <div style={{order:curOrder.indexOf("Distribución por Estado")}}>{sOn("Distribución por Estado")&&<Sec title={secNum("Distribución por Estado")+". Distribución por Estado (medios)"} icon={<MapPin size={18} color={brand.accentColor}/>} brand={brand}><GenChart data={pd.estadoData} brand={brand} colors={genPalette(brand.secondaryColor,brand.primaryColor,pd.estadoData.length)}/><div className="mt-4"><AIBlock text={aiT("estado",aiEstado(pd))} brand={brand} loading={aiLoading}/></div></Sec>}</div>
-                <div style={{order:curOrder.indexOf("Top Publicaciones")}}>{sOn("Top Publicaciones")&&<Sec title={secNum("Top Publicaciones")+". Top Publicaciones"} icon={<Trophy size={18} color={brand.accentColor}/>} brand={brand}><div className="mb-4"><AIBlock text={aiT("topPub",aiTopPub())} brand={brand} loading={aiLoading}/></div><div className="grid grid-cols-2 gap-4 mb-5"><div><div className="text-xs font-bold text-gray-700 mb-2">Top 5 General por Alcance</div><T5Table items={pd.top5AlcGeneral} label="Alcance" brand={brand} showTitulo/></div><div><div className="text-xs font-bold text-gray-700 mb-2">Top 5 General por Costo</div><T5Table items={pd.top5CostGeneral} label="Costo" brand={brand} showTitulo/></div></div><div className="text-sm font-bold text-gray-600 mb-3">Por Red Social</div>{VS.filter(s=>pd.top5AlcPorFuente[s]?.length>0).map(s=>(<div key={s} className="mb-4"><div className="flex items-center gap-2 mb-2"><div className="w-6 h-6 rounded-lg flex items-center justify-center" style={{background:srcC[s]}}>{socIco[s]}</div><span className="text-sm font-bold text-gray-800">{s}</span></div><div className="grid grid-cols-2 gap-4"><div><div className="text-[11px] font-semibold text-gray-500 mb-1">Por Alcance</div><T5Table items={pd.top5AlcPorFuente[s]} label="Alcance" brand={brand}/></div>{pd.totalCosto>0&&<div><div className="text-[11px] font-semibold text-gray-500 mb-1">Por AVE</div><T5Table items={pd.top5CostPorFuente[s]} label="AVE" brand={brand}/></div>}</div></div>))}<div className="text-sm font-bold text-gray-600 mb-3 mt-5">Por Tipo de Medio</div>{VM.filter(t=>pd.top5AlcPorFuente[t]?.length>0).map(t=>(<div key={t} className="mb-4"><div className="flex items-center gap-2 mb-2"><div className="w-6 h-6 rounded-lg flex items-center justify-center" style={{background:brand.mediaColors[t]||srcC[t]}}>{medIco[t]}</div><span className="text-sm font-bold text-gray-800">{t}</span></div><div className="grid grid-cols-2 gap-4"><div><div className="text-[11px] font-semibold text-gray-500 mb-1">Por Alcance</div><T5Table items={pd.top5AlcPorFuente[t]} label="Alcance" brand={brand} showTitulo/></div><div><div className="text-[11px] font-semibold text-gray-500 mb-1">Por Costo</div><T5Table items={pd.top5CostPorFuente[t]} label="Costo" brand={brand} showTitulo/></div></div></div>))}</Sec>}</div>
+                <div style={{order:curOrder.indexOf("Top Publicaciones")}}>{sOn("Top Publicaciones")&&<Sec title={secNum("Top Publicaciones")+". Top Publicaciones"} icon={<Trophy size={18} color={brand.accentColor}/>} brand={brand}><div className="mb-4"><AIBlock text={aiT("topPub",aiTopPub())} brand={brand} loading={aiLoading}/></div><>{hasAlcData&&hasCostData?(<div className="grid grid-cols-2 gap-4 mb-5"><div><div className="text-xs font-bold text-gray-700 mb-2">Top 5 General por Alcance</div><T5Table items={pd.top5AlcGeneral} label="Alcance" brand={brand} showTitulo/></div><div><div className="text-xs font-bold text-gray-700 mb-2">Top 5 General por Costo</div><T5Table items={pd.top5CostGeneral} label="Costo" brand={brand} showTitulo/></div></div>):hasAlcData?(<div className="flex justify-center mb-5"><div className="w-full max-w-lg"><div className="text-xs font-bold text-gray-700 mb-2">Top 5 General por Alcance</div><T5Table items={pd.top5AlcGeneral} label="Alcance" brand={brand} showTitulo/></div></div>):hasCostData?(<div className="flex justify-center mb-5"><div className="w-full max-w-lg"><div className="text-xs font-bold text-gray-700 mb-2">Top 5 General por Costo</div><T5Table items={pd.top5CostGeneral} label="Costo" brand={brand} showTitulo/></div></div>):null}</><div className="text-sm font-bold text-gray-600 mb-3">Por Red Social</div>{VS.filter(s=>pd.top5AlcPorFuente[s]?.length>0||pd.top5CostPorFuente[s]?.length>0).map(s=>(<div key={s} className="mb-4"><div className="flex items-center gap-2 mb-2"><div className="w-6 h-6 rounded-lg flex items-center justify-center" style={{background:srcC[s]}}>{socIco[s]}</div><span className="text-sm font-bold text-gray-800">{s}</span></div><div className="grid grid-cols-2 gap-4">{hasAlcData&&pd.top5AlcPorFuente[s]?.length>0&&<div><div className="text-[11px] font-semibold text-gray-500 mb-1">Por Alcance</div><T5Table items={pd.top5AlcPorFuente[s]} label="Alcance" brand={brand}/></div>}{hasCostData&&pd.top5CostPorFuente[s]?.length>0&&<div><div className="text-[11px] font-semibold text-gray-500 mb-1">Por AVE</div><T5Table items={pd.top5CostPorFuente[s]} label="AVE" brand={brand}/></div>}</div></div>))}<div className="text-sm font-bold text-gray-600 mb-3 mt-5">Por Tipo de Medio</div>{VM.filter(t=>pd.top5AlcPorFuente[t]?.length>0||pd.top5CostPorFuente[t]?.length>0).map(t=>(<div key={t} className="mb-4"><div className="flex items-center gap-2 mb-2"><div className="w-6 h-6 rounded-lg flex items-center justify-center" style={{background:brand.mediaColors[t]||srcC[t]}}>{medIco[t]}</div><span className="text-sm font-bold text-gray-800">{t}</span></div><div className="grid grid-cols-2 gap-4">{hasAlcData&&pd.top5AlcPorFuente[t]?.length>0&&<div><div className="text-[11px] font-semibold text-gray-500 mb-1">Por Alcance</div><T5Table items={pd.top5AlcPorFuente[t]} label="Alcance" brand={brand} showTitulo/></div>}{hasCostData&&pd.top5CostPorFuente[t]?.length>0&&<div><div className="text-[11px] font-semibold text-gray-500 mb-1">Por Costo</div><T5Table items={pd.top5CostPorFuente[t]} label="Costo" brand={brand} showTitulo/></div>}</div></div>))}</Sec>}</div>
                 <div style={{order:curOrder.indexOf("Conclusiones")}}>{sOn("Conclusiones")&&<Sec title={secNum("Conclusiones")+". Conclusiones"} icon={<FileText size={18} color={brand.accentColor}/>} brand={brand}><AIBlock text={aiT("conclusiones",aiConc(pd))} brand={brand} loading={aiLoading}/></Sec>}</div>
                 <div style={{order:curOrder.indexOf("Recomendaciones Estratégicas")}}>{sOn("Recomendaciones Estratégicas")&&<Sec title={secNum("Recomendaciones Estratégicas")+". Recomendaciones Estratégicas"} icon={<Lightbulb size={18} color={brand.accentColor}/>} brand={brand}><AIBlock text={aiT("recomendaciones",aiRec(pd))} brand={brand} loading={aiLoading}/></Sec>}</div>
               </>)}
