@@ -72,7 +72,7 @@ function processSocial(rows:SocialRow[]):PData{
   const fc=[...f];
   const t5ag=fc.sort((a,b)=>(b.Alcance||0)-(a.Alcance||0)).slice(0,5).map(r=>({nombre:r.Autor,valor:r.Alcance||0,link:r.Link||"",fuente:r.Fuente,titulo:r.Contenido?.substring(0,80)||""}));
   const fc2=[...f];
-  const t5cg=fc2.sort((a,b)=>(b.AVE||0)-(a.AVE||0)).slice(0,5).map(r=>({nombre:r.Autor,valor:r.AVE||0,link:r.Link||"",fuente:r.Fuente,titulo:r.Contenido?.substring(0,80)||""}));
+  const t5cg=fc2.sort((a,b)=>(b.AVE||0)-(a.AVE||0)).filter(r=>(r.AVE||0)>0).slice(0,5).map(r=>({nombre:r.Autor,valor:r.AVE||0,link:r.Link||"",fuente:r.Fuente,titulo:r.Contenido?.substring(0,80)||""}));
   const t5af:Record<string,Top5Item[]>={};const t5cf:Record<string,Top5Item[]>={};
   VS.forEach(s=>{const sub=[...f.filter(r=>r.Fuente===s)];t5af[s]=sub.sort((a,b)=>(b.Alcance||0)-(a.Alcance||0)).slice(0,5).map(r=>({nombre:r.Autor,valor:r.Alcance||0,link:r.Link||"",fuente:r.Fuente,titulo:r.Contenido?.substring(0,80)||""}));const sub2=[...f.filter(r=>r.Fuente===s)];t5cf[s]=sub2.sort((a,b)=>(b.AVE||0)-(a.AVE||0)).slice(0,5).map(r=>({nombre:r.Autor,valor:r.AVE||0,link:r.Link||"",fuente:r.Fuente,titulo:r.Contenido?.substring(0,80)||""}))});
   const hm:Record<number,number>={};f.forEach(r=>{const h=r.Hora;if(h>=0&&h<=23)hm[h]=(hm[h]||0)+1});
@@ -99,7 +99,7 @@ function processMedia(rows:MediaRow[]):PData{
   const seen1=new Set<string>();const tp=f.filter(r=>r.Sentimiento==="Positivo").sort((a,b)=>(b.Alcance||0)-(a.Alcance||0)).filter(r=>{const k=r.Medio+r.Titulo;if(seen1.has(k))return false;seen1.add(k);return true}).slice(0,5).map(r=>({autor:r.Medio,contenido:r.Titulo||(r.Texto?r.Texto.substring(0,200):""),link:r.Link||"",fuente:r.TipoMedio,alcance:r.Alcance||0}));
   const seen2=new Set<string>();const tn=f.filter(r=>r.Sentimiento==="Negativo").sort((a,b)=>(b.Alcance||0)-(a.Alcance||0)).filter(r=>{const k=r.Medio+r.Titulo;if(seen2.has(k))return false;seen2.add(k);return true}).slice(0,5).map(r=>({autor:r.Medio,contenido:r.Titulo||(r.Texto?r.Texto.substring(0,200):""),link:r.Link||"",fuente:r.TipoMedio,alcance:r.Alcance||0}));
   const fc=[...f];const t5ag=fc.sort((a,b)=>(b.Alcance||0)-(a.Alcance||0)).slice(0,5).map(r=>({nombre:r.Medio,valor:r.Alcance||0,link:r.Link||"",fuente:r.TipoMedio,titulo:r.Titulo||""}));
-  const fc2=[...f];const t5cg=fc2.sort((a,b)=>(b.Costo||0)-(a.Costo||0)).slice(0,5).map(r=>({nombre:r.Medio,valor:r.Costo||0,link:r.Link||"",fuente:r.TipoMedio,titulo:r.Titulo||""}));
+  const fc2=[...f];const t5cg=fc2.sort((a,b)=>(b.Costo||0)-(a.Costo||0)).filter(r=>(r.Costo||0)>0).slice(0,5).map(r=>({nombre:r.Medio,valor:r.Costo||0,link:r.Link||"",fuente:r.TipoMedio,titulo:r.Titulo||""}));
   const t5af:Record<string,Top5Item[]>={};const t5cf:Record<string,Top5Item[]>={};
   VM.forEach(t=>{const sub=[...f.filter(r=>r.TipoMedio===t)];t5af[t]=sub.sort((a,b)=>(b.Alcance||0)-(a.Alcance||0)).slice(0,5).filter(r=>(r.Alcance||0)>0).map(r=>({nombre:r.Medio,valor:r.Alcance||0,link:r.Link||"",fuente:r.TipoMedio,titulo:r.Titulo||""}));const sub2=[...f.filter(r=>r.TipoMedio===t)];t5cf[t]=sub2.sort((a,b)=>(b.Costo||0)-(a.Costo||0)).slice(0,5).filter(r=>(r.Costo||0)>0).map(r=>({nombre:r.Medio,valor:r.Costo||0,link:r.Link||"",fuente:r.TipoMedio,titulo:r.Titulo||""}))});
   const tm:Record<string,number>={};f.forEach(r=>{const t=r.Tier||"Sin Tier";tm[t]=(tm[t]||0)+1});
@@ -131,7 +131,7 @@ function processFusionado(sp:PData,mp:PData):PData{
   const allMed=(mp.rawRows as MediaRow[]).map(r=>({nombre:r.Medio,valor:r.Alcance||0,costo:r.Costo||0,link:r.Link||"",fuente:r.TipoMedio,titulo:r.Titulo||""}));
   const combined=[...allSoc,...allMed];
   const t5ag=[...combined].sort((a,b)=>b.valor-a.valor).slice(0,5).map(r=>({nombre:r.nombre,valor:r.valor,link:r.link,fuente:r.fuente,titulo:r.titulo}));
-  const t5cg=[...combined].sort((a,b)=>b.costo-a.costo).slice(0,5).map(r=>({nombre:r.nombre,valor:r.costo,link:r.link,fuente:r.fuente,titulo:r.titulo}));
+  const t5cg=[...combined].sort((a,b)=>b.costo-a.costo).filter(r=>r.costo>0).slice(0,5).map(r=>({nombre:r.nombre,valor:r.costo,link:r.link,fuente:r.fuente,titulo:r.titulo}));
   const t5af={...sp.top5AlcPorFuente,...mp.top5AlcPorFuente};
   const t5cf={...sp.top5CostPorFuente,...mp.top5CostPorFuente};
   return{dataType:"fusionado",totalMenciones:n,totalAlcance:alc,totalInteracciones:inter,autoresUnicos:uniq,totalCosto:costT,sentCounts:sc,sentNeto:sn,trendData:td,fuenteData:fd,kpiByFuente:kf,topPositivas:[...sp.topPositivas.slice(0,5),...mp.topPositivas.slice(0,5)],topNegativas:[...sp.topNegativas.slice(0,5),...mp.topNegativas.slice(0,5)],rawRows:[...sp.rawRows,...mp.rawRows],top5AlcGeneral:t5ag,top5CostGeneral:t5cg,top5AlcPorFuente:t5af,top5CostPorFuente:t5cf,hourData:sp.hourData,tierData:mp.tierData,tipoNotaData:mp.tipoNotaData,estadoData:mp.estadoData,top5Medios:mp.top5Medios};
@@ -267,9 +267,9 @@ function AIBlock({text,brand,loading}:{text:string;brand:Brand;loading:boolean})
   };
   const paragraphs=safeText.split(/\s*\|\|\s*/).filter(Boolean);
   const bg=AI_COLORS[brand.aiBlockColor]||AI_COLORS.blue;
-  return(<div className="rounded-xl p-4" style={{background:bg,borderLeft:"4px solid "+brand.accentColor}}><div className="flex items-center gap-1.5 mb-2"><Sparkles size={13} color={brand.accentColor}/><span className="text-[10px] font-semibold uppercase tracking-wider" style={{color:brand.accentColor}}>Análisis IA</span></div>{loading?<div className="flex gap-1.5 py-2">{[0,1,2].map(i=><div key={i} className="w-2 h-2 rounded-full" style={{background:brand.accentColor,animation:"pulse 1.2s ease-in-out "+(i*0.2)+"s infinite"}}/>)}</div>:<div className="space-y-2">{paragraphs.map((pg,pi)=><p key={pi} className="text-sm leading-relaxed text-gray-700">{renderPart(pg)}</p>)}</div>}</div>);
+  return(<div data-role="ai-block" className="rounded-xl p-4" style={{background:bg,borderLeft:"4px solid "+brand.accentColor}}><div className="flex items-center gap-1.5 mb-2"><Sparkles size={13} color={brand.accentColor}/><span className="text-[10px] font-semibold uppercase tracking-wider" style={{color:brand.accentColor}}>Análisis IA</span></div>{loading?<div className="flex gap-1.5 py-2">{[0,1,2].map(i=><div key={i} className="w-2 h-2 rounded-full" style={{background:brand.accentColor,animation:"pulse 1.2s ease-in-out "+(i*0.2)+"s infinite"}}/>)}</div>:<div className="space-y-2">{paragraphs.map((pg,pi)=><p key={pi} className="text-sm leading-relaxed text-gray-700">{renderPart(pg)}</p>)}</div>}</div>);
 }
-function Sec({title,icon,children,brand}:{title:string;icon:React.ReactNode;children:React.ReactNode;brand:Brand}){return(<div className="bg-white rounded-2xl p-6 border border-gray-100 overflow-hidden" style={{boxShadow:"0 1px 3px rgba(0,0,0,0.04)"}}><div className="flex items-center gap-2.5 mb-5"><div className="w-9 h-9 rounded-lg flex items-center justify-center" style={{background:brand.accentColor+"12"}}>{icon}</div><h2 className="text-base font-bold" style={{color:brand.primaryColor,fontFamily:brand.titleFont}}>{title}</h2></div>{children}</div>)}
+function Sec({title,icon,children,brand}:{title:string;icon:React.ReactNode;children:React.ReactNode;brand:Brand}){return(<div className="bg-white rounded-2xl p-6 border border-gray-100 overflow-hidden" style={{boxShadow:"0 1px 3px rgba(0,0,0,0.04)"}}><div data-role="sec-title" className="flex items-center gap-2.5 mb-5"><div className="w-9 h-9 rounded-lg flex items-center justify-center" style={{background:brand.accentColor+"12"}}>{icon}</div><h2 className="text-base font-bold" style={{color:brand.primaryColor,fontFamily:brand.titleFont}}>{title}</h2></div>{children}</div>)}
 function MenCard({autor,contenido,link,fuente,alcance,brand,tipo}:{autor:string;contenido:string;link:string;fuente:string;alcance:number;brand:Brand;tipo:"positivo"|"negativo"}){const c=tipo==="positivo"?brand.positiveColor:brand.negativeColor;return(<div className="rounded-xl p-3.5 border h-full" style={{borderColor:c+"30",background:c+"06"}}><div className="flex justify-between items-start mb-1.5"><div className="flex items-center gap-1.5">{tipo==="positivo"?<ThumbsUp size={12} color={c}/>:<ThumbsDown size={12} color={c}/>}<span className="text-xs font-bold text-gray-800">{autor}</span></div><span className="text-[9px] px-2 py-0.5 rounded-full font-medium flex-shrink-0" style={{background:c+"18",color:c}}>{fuente}</span></div><p className="text-[11px] text-gray-600 leading-relaxed mb-1.5">{contenido.substring(0,200)}{contenido.length>200?"...":""}</p><div className="flex justify-between items-center mt-auto">{link&&link!=="undefined"&&<a href={link} target="_blank" rel="noopener noreferrer" className="text-[10px] font-semibold" style={{color:brand.accentColor}}>Ver original</a>}<span className="text-[9px] text-gray-400">{fmt(alcance)} alcance</span></div></div>)}
 function T5Table({items,label,brand,showTitulo}:{items:Top5Item[];label:string;brand:Brand;showTitulo?:boolean}){
   if(!items.length)return<p className="text-xs text-gray-400">Sin datos</p>;
@@ -515,8 +515,8 @@ FORMATO: JSON válido sin markdown ni backticks. NO uses saltos de línea dentro
       const prHex=hex6(brand.primaryColor||"1a1a2e");
 
       /* ── Helpers ── */
-      const capEl=async(e:HTMLElement,bg="#ffffff"):Promise<{d:Uint8Array;w:number;h:number}>=>{
-        const cv=await html2canvas(e,{scale:3,useCORS:true,logging:false,windowWidth:940,backgroundColor:bg});
+      const capEl=async(e:HTMLElement,bg="#ffffff",ww=940):Promise<{d:Uint8Array;w:number;h:number}>=>{
+        const cv=await html2canvas(e,{scale:3,useCORS:true,logging:false,windowWidth:Math.max(ww,940),backgroundColor:bg});
         const du=cv.toDataURL("image/png");const b=atob(du.split(",")[1]);
         const a=new Uint8Array(b.length);for(let j=0;j<b.length;j++)a[j]=b.charCodeAt(j);
         return{d:a,w:cv.width,h:cv.height};
@@ -556,21 +556,26 @@ FORMATO: JSON válido sin markdown ni backticks. NO uses saltos de línea dentro
       /* ── Capture chart only (hide title bar + AIBlock) ── */
       const capChart=async(sec:HTMLElement):Promise<{d:Uint8Array;w:number;h:number}|null>=>{
         const hidden:HTMLElement[]=[];
-        /* The Sec component renders: <div class="bg-white..."><div class="flex items-center gap-2.5 mb-5">{icon}<h2/></div>{children}</div> */
-        /* Find all h2 title bars and AI blocks within the section */
-        sec.querySelectorAll("h2").forEach(h2=>{
-          const bar=h2.parentElement;
-          if(bar){bar.style.display="none";hidden.push(bar)}
+        /* Hide title bars */
+        sec.querySelectorAll('[data-role="sec-title"]').forEach(el=>{
+          const h=el as HTMLElement;h.style.display="none";hidden.push(h);
         });
-        /* Hide AI blocks (contain sparkle icon + "ANÁLISIS IA") */
-        sec.querySelectorAll("div").forEach(div=>{
-          const el=div as HTMLElement;
-          if(el.textContent?.includes("ANÁLISIS IA")&&el.className?.includes("rounded")){
-            el.style.display="none";hidden.push(el);
+        /* Hide AI analysis blocks */
+        sec.querySelectorAll('[data-role="ai-block"]').forEach(el=>{
+          const h=el as HTMLElement;h.style.display="none";hidden.push(h);
+        });
+        /* Also hide any "mt-4" wrapper divs that only contained AI blocks (now empty) */
+        sec.querySelectorAll('.mt-4,.mt-5').forEach(el=>{
+          const h=el as HTMLElement;
+          if(h.children.length===1&&h.children[0].getAttribute("data-role")==="ai-block"){
+            h.style.display="none";hidden.push(h);
           }
         });
         let result:null|{d:Uint8Array;w:number;h:number}=null;
-        try{result=await capEl(sec,"#ffffff")}catch(e){console.warn("capChart error:",e)}
+        try{
+          const w=sec.scrollWidth||sec.offsetWidth||940;
+          result=await capEl(sec,"#ffffff",w);
+        }catch(e){console.warn("capChart error:",e)}
         hidden.forEach(h=>h.style.display="");
         return result;
       };
@@ -702,8 +707,8 @@ FORMATO: JSON válido sin markdown ni backticks. NO uses saltos de línea dentro
           }
         }else if(isTopPub){
           /* ── Top Publicaciones: Word tables ── */
-          const aiKey=getAiKey(secTitle);
-          ch.push(...aiParas(aiTexts[aiKey]));
+          const tpText=aiTexts.topPub||aiTopPub();
+          if(tpText)ch.push(...aiParas(tpText));
 
           /* General tables */
           if(pd.top5AlcGeneral.length>0)ch.push(...mkT5(pd.top5AlcGeneral,"Alcance","Top 5 General por Alcance") as InstanceType<typeof Paragraph>[]);
@@ -741,7 +746,9 @@ FORMATO: JSON válido sin markdown ni backticks. NO uses saltos de línea dentro
         }else if(isTextOnly){
           /* ── Pure text sections ── */
           const aiKey=getAiKey(secTitle);
-          ch.push(...aiParas(aiTexts[aiKey]));
+          const fallbacks:Record<string,()=>string>={"resumen":()=>aiResumen(pd),"conclusiones":()=>aiConc(pd),"recomendaciones":()=>aiRec(pd)};
+          const text=aiTexts[aiKey]||(aiKey&&fallbacks[aiKey]?fallbacks[aiKey]():"");
+          if(text)ch.push(...aiParas(text));
         }else{
           /* ── Chart/visual sections: capture image (without title/AI), then add AI text ── */
           const chartImg=await capChart(sec);
@@ -750,7 +757,13 @@ FORMATO: JSON válido sin markdown ni backticks. NO uses saltos de línea dentro
           /* Add AI text (skip for Indicadores de Sentimiento) */
           if(!isIndicadoresSent){
             const aiKey=getAiKey(secTitle);
-            if(aiKey)ch.push(...aiParas(aiTexts[aiKey]));
+            if(aiKey){
+              const aiText=aiTexts[aiKey];
+              /* Use fallback if AI text not available */
+              const fallbacks:Record<string,()=>string>={"fuentes":()=>aiFuentes(pd),"picos":()=>aiPicos(pd),"hora":()=>aiHora(pd),"sentimiento":()=>aiSent(pd),"tendSent":()=>aiTendSent(pd),"tier":()=>aiTier(pd),"top5med":()=>aiTop5Med(pd),"tipoNota":()=>aiTipoNota(pd),"estado":()=>aiEstado(pd),"topPub":()=>aiTopPub(),"picosRedes":()=>sPd?aiPicos(sPd):"","picosMedios":()=>mPd?aiPicos(mPd):""};
+              const text=aiText||(fallbacks[aiKey]?fallbacks[aiKey]():"");
+              if(text)ch.push(...aiParas(text));
+            }
           }
         }
         ch.push(bl());
