@@ -516,33 +516,16 @@ FORMATO: JSON válido sin markdown ni backticks. NO uses saltos de línea dentro
 
       /* ── Helpers ── */
       const capEl=async(e:HTMLElement,bg="#ffffff"):Promise<{d:Uint8Array;w:number;h:number}>=>{
-        /* Remove overflow clipping from element, ALL descendants, and all ancestors */
-        const saved:Map<HTMLElement,{ov:string;cls:string}>=new Map();
-        /* Fix descendants (Sec cards have overflow-hidden) */
-        e.querySelectorAll("*").forEach(child=>{
-          const el=child as HTMLElement;
-          if(el.className&&typeof el.className==="string"&&el.className.includes("overflow-hidden")){
-            saved.set(el,{ov:el.style.overflow,cls:el.className});
-            el.className=el.className.replace(/overflow-hidden/g,"overflow-visible");
-            el.style.overflow="visible";
-          }
-        });
-        /* Fix ancestors */
-        let node:HTMLElement|null=e;
-        while(node&&node!==document.body){
-          if(!saved.has(node)){
-            const orig={ov:node.style.overflow,cls:node.className};
-            if(node.className&&typeof node.className==="string"&&node.className.includes("overflow-hidden"))node.className=node.className.replace(/overflow-hidden/g,"overflow-visible");
-            node.style.overflow="visible";
-            saved.set(node,orig);
-          }
-          node=node.parentElement;
-        }
-        void e.offsetWidth;
-        const actualW=Math.max(e.scrollWidth,e.offsetWidth,940);
-        const cv=await html2canvas(e,{scale:2,useCORS:true,logging:false,windowWidth:actualW+40,backgroundColor:bg});
-        /* Restore all */
-        saved.forEach((orig,el)=>{el.style.overflow=orig.ov;if(typeof orig.cls==="string")el.className=orig.cls});
+        /* Inject global CSS to force overflow visible on EVERYTHING */
+        const style=document.createElement("style");
+        style.id="export-override";
+        style.textContent="#report-export-target,#report-export-target *{overflow:visible!important;max-width:none!important}";
+        document.head.appendChild(style);
+        void e.offsetWidth;/* force reflow */
+        const actualW=Math.max(e.scrollWidth,e.offsetWidth,960);
+        const cv=await html2canvas(e,{scale:2,useCORS:true,logging:false,windowWidth:actualW+60,backgroundColor:bg});
+        /* Remove override */
+        style.remove();
         const du=cv.toDataURL("image/png");const b=atob(du.split(",")[1]);
         const a=new Uint8Array(b.length);for(let j=0;j<b.length;j++)a[j]=b.charCodeAt(j);
         return{d:a,w:cv.width,h:cv.height};
@@ -1013,7 +996,7 @@ FORMATO: JSON válido sin markdown ni backticks. NO uses saltos de línea dentro
               </div>
             </div>
             {showChecklist&&<div className="max-w-[940px] mx-auto px-7 py-4"><div className="bg-white rounded-xl p-5 border border-gray-100 shadow-lg"><div className="flex justify-between items-center mb-3"><div className="text-sm font-bold text-gray-700">Módulos activos</div><div className="text-[10px] text-gray-400">Arrastra para reordenar</div></div><div className="grid gap-1">{curOrder.map((s,i)=>(<div key={s} draggable onDragStart={()=>handleDragStart(i)} onDragOver={(e)=>handleDragOver(e,i)} onDragEnd={handleDragEnd} className="flex items-center gap-2 px-3 py-2 rounded-lg border border-gray-100 bg-gray-50/50 cursor-grab active:cursor-grabbing hover:bg-blue-50 transition-colors select-none"><div className="text-gray-300 flex-shrink-0"><svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><circle cx="8" cy="4" r="2"/><circle cx="16" cy="4" r="2"/><circle cx="8" cy="12" r="2"/><circle cx="16" cy="12" r="2"/><circle cx="8" cy="20" r="2"/><circle cx="16" cy="20" r="2"/></svg></div><span className="text-[11px] text-gray-500 font-mono w-5">{curEnabled[s]!==false?String(curOrder.filter((_,j)=>j<=i&&curEnabled[_]!==false).length):""}</span><input type="checkbox" checked={curEnabled[s]!==false} onChange={()=>toggleSec(s)} className="accent-blue-500" onClick={e=>e.stopPropagation()}/><span className="text-xs text-gray-700 flex-1">{s}</span></div>))}</div></div></div>}
-            <div ref={reportContainerRef} className="max-w-[940px] mx-auto p-7 pb-20 grid gap-5 overflow-hidden">
+            <div ref={reportContainerRef} id="report-export-target" className="max-w-[940px] mx-auto p-7 pb-20 grid gap-5 overflow-hidden">
               {/* Cover */}
               <style>{`@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;700&family=Inter:wght@400;600;700&family=Lato:wght@400;700&family=Merriweather:wght@400;700&family=Montserrat:wght@400;600;700&family=Nunito:wght@400;700&family=Outfit:wght@400;600;700;800&family=Playfair+Display:wght@400;700&family=Poppins:wght@400;600;700&family=Raleway:wght@400;600;700&family=Roboto:wght@400;700&family=Source+Sans+3:wght@400;600;700&display=swap');`}</style>
               <div className="rounded-2xl p-10 relative overflow-hidden" style={{background:"linear-gradient(135deg,"+brand.bannerPrimary+","+brand.bannerSecondary+")"}}>
