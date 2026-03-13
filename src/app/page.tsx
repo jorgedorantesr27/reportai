@@ -70,11 +70,11 @@ function processSocial(rows:SocialRow[]):PData{
   const seen1=new Set<string>();const tp=f.filter(r=>r.Sentimiento==="Positivo").sort((a,b)=>(b.Alcance||0)-(a.Alcance||0)).filter(r=>{const k=r.Autor+r.Contenido;if(seen1.has(k))return false;seen1.add(k);return true}).slice(0,5).map(r=>({autor:r.Autor,contenido:r.Contenido||"",link:r.Link||"",fuente:r.Fuente,alcance:r.Alcance||0}));
   const seen2=new Set<string>();const tn=f.filter(r=>r.Sentimiento==="Negativo").sort((a,b)=>(b.Alcance||0)-(a.Alcance||0)).filter(r=>{const k=r.Autor+r.Contenido;if(seen2.has(k))return false;seen2.add(k);return true}).slice(0,5).map(r=>({autor:r.Autor,contenido:r.Contenido||"",link:r.Link||"",fuente:r.Fuente,alcance:r.Alcance||0}));
   const fc=[...f];
-  const t5ag=fc.sort((a,b)=>(b.Alcance||0)-(a.Alcance||0)).slice(0,5).map(r=>({nombre:r.Autor,valor:r.Alcance||0,link:r.Link||"",fuente:r.Fuente,titulo:r.Contenido?.substring(0,80)||""}));
+  const t5ag=fc.sort((a,b)=>(b.Alcance||0)-(a.Alcance||0)).filter(r=>(r.Alcance||0)>0).slice(0,5).map(r=>({nombre:r.Autor,valor:r.Alcance||0,link:r.Link||"",fuente:r.Fuente,titulo:r.Contenido?.substring(0,80)||""}));
   const fc2=[...f];
   const t5cg=fc2.sort((a,b)=>(b.AVE||0)-(a.AVE||0)).filter(r=>(r.AVE||0)>0).slice(0,5).map(r=>({nombre:r.Autor,valor:r.AVE||0,link:r.Link||"",fuente:r.Fuente,titulo:r.Contenido?.substring(0,80)||""}));
   const t5af:Record<string,Top5Item[]>={};const t5cf:Record<string,Top5Item[]>={};
-  VS.forEach(s=>{const sub=[...f.filter(r=>r.Fuente===s)];t5af[s]=sub.sort((a,b)=>(b.Alcance||0)-(a.Alcance||0)).slice(0,5).map(r=>({nombre:r.Autor,valor:r.Alcance||0,link:r.Link||"",fuente:r.Fuente,titulo:r.Contenido?.substring(0,80)||""}));const sub2=[...f.filter(r=>r.Fuente===s)];t5cf[s]=sub2.sort((a,b)=>(b.AVE||0)-(a.AVE||0)).slice(0,5).map(r=>({nombre:r.Autor,valor:r.AVE||0,link:r.Link||"",fuente:r.Fuente,titulo:r.Contenido?.substring(0,80)||""}))});
+  VS.forEach(s=>{const sub=[...f.filter(r=>r.Fuente===s)];t5af[s]=sub.sort((a,b)=>(b.Alcance||0)-(a.Alcance||0)).filter(r=>(r.Alcance||0)>0).slice(0,5).map(r=>({nombre:r.Autor,valor:r.Alcance||0,link:r.Link||"",fuente:r.Fuente,titulo:r.Contenido?.substring(0,80)||""}));const sub2=[...f.filter(r=>r.Fuente===s)];t5cf[s]=sub2.sort((a,b)=>(b.AVE||0)-(a.AVE||0)).filter(r=>(r.AVE||0)>0).slice(0,5).map(r=>({nombre:r.Autor,valor:r.AVE||0,link:r.Link||"",fuente:r.Fuente,titulo:r.Contenido?.substring(0,80)||""}))});
   const hm:Record<number,number>={};f.forEach(r=>{const h=r.Hora;if(h>=0&&h<=23)hm[h]=(hm[h]||0)+1});
   const hd=Array.from({length:24},(_,i)=>({hora:i,total:hm[i]||0}));
   return{dataType:"social",totalMenciones:n,totalAlcance:alc,totalInteracciones:inter,autoresUnicos:uniq,totalCosto:costT,sentCounts:sc,sentNeto:sn,trendData:td,fuenteData:fd,kpiByFuente:kf,topPositivas:tp,topNegativas:tn,rawRows:f,top5AlcGeneral:t5ag,top5CostGeneral:t5cg,top5AlcPorFuente:t5af,top5CostPorFuente:t5cf,hourData:hd,tierData:[],tipoNotaData:[],estadoData:[],top5Medios:[]};
@@ -98,7 +98,7 @@ function processMedia(rows:MediaRow[]):PData{
   const kf=Object.values(km).map(k=>({fuente:k.fuente,menciones:k.menciones,interacciones:0,impresiones:k.impresiones,lideres:k.autores.size,costo:k.costo})).sort((a,b)=>{const ia=VM.indexOf(a.fuente);const ib=VM.indexOf(b.fuente);return ia-ib});
   const seen1=new Set<string>();const tp=f.filter(r=>r.Sentimiento==="Positivo").sort((a,b)=>(b.Alcance||0)-(a.Alcance||0)).filter(r=>{const k=r.Medio+r.Titulo;if(seen1.has(k))return false;seen1.add(k);return true}).slice(0,5).map(r=>({autor:r.Medio,contenido:r.Titulo||(r.Texto?r.Texto.substring(0,200):""),link:r.Link||"",fuente:r.TipoMedio,alcance:r.Alcance||0}));
   const seen2=new Set<string>();const tn=f.filter(r=>r.Sentimiento==="Negativo").sort((a,b)=>(b.Alcance||0)-(a.Alcance||0)).filter(r=>{const k=r.Medio+r.Titulo;if(seen2.has(k))return false;seen2.add(k);return true}).slice(0,5).map(r=>({autor:r.Medio,contenido:r.Titulo||(r.Texto?r.Texto.substring(0,200):""),link:r.Link||"",fuente:r.TipoMedio,alcance:r.Alcance||0}));
-  const fc=[...f];const t5ag=fc.sort((a,b)=>(b.Alcance||0)-(a.Alcance||0)).slice(0,5).map(r=>({nombre:r.Medio,valor:r.Alcance||0,link:r.Link||"",fuente:r.TipoMedio,titulo:r.Titulo||""}));
+  const fc=[...f];const t5ag=fc.sort((a,b)=>(b.Alcance||0)-(a.Alcance||0)).filter(r=>(r.Alcance||0)>0).slice(0,5).map(r=>({nombre:r.Medio,valor:r.Alcance||0,link:r.Link||"",fuente:r.TipoMedio,titulo:r.Titulo||""}));
   const fc2=[...f];const t5cg=fc2.sort((a,b)=>(b.Costo||0)-(a.Costo||0)).filter(r=>(r.Costo||0)>0).slice(0,5).map(r=>({nombre:r.Medio,valor:r.Costo||0,link:r.Link||"",fuente:r.TipoMedio,titulo:r.Titulo||""}));
   const t5af:Record<string,Top5Item[]>={};const t5cf:Record<string,Top5Item[]>={};
   VM.forEach(t=>{const sub=[...f.filter(r=>r.TipoMedio===t)];t5af[t]=sub.sort((a,b)=>(b.Alcance||0)-(a.Alcance||0)).slice(0,5).filter(r=>(r.Alcance||0)>0).map(r=>({nombre:r.Medio,valor:r.Alcance||0,link:r.Link||"",fuente:r.TipoMedio,titulo:r.Titulo||""}));const sub2=[...f.filter(r=>r.TipoMedio===t)];t5cf[t]=sub2.sort((a,b)=>(b.Costo||0)-(a.Costo||0)).slice(0,5).filter(r=>(r.Costo||0)>0).map(r=>({nombre:r.Medio,valor:r.Costo||0,link:r.Link||"",fuente:r.TipoMedio,titulo:r.Titulo||""}))});
@@ -130,7 +130,7 @@ function processFusionado(sp:PData,mp:PData):PData{
   const allSoc=(sp.rawRows as SocialRow[]).map(r=>({nombre:r.Autor,valor:r.Alcance||0,costo:r.AVE||0,link:r.Link||"",fuente:r.Fuente,titulo:r.Contenido?.substring(0,80)||""}));
   const allMed=(mp.rawRows as MediaRow[]).map(r=>({nombre:r.Medio,valor:r.Alcance||0,costo:r.Costo||0,link:r.Link||"",fuente:r.TipoMedio,titulo:r.Titulo||""}));
   const combined=[...allSoc,...allMed];
-  const t5ag=[...combined].sort((a,b)=>b.valor-a.valor).slice(0,5).map(r=>({nombre:r.nombre,valor:r.valor,link:r.link,fuente:r.fuente,titulo:r.titulo}));
+  const t5ag=[...combined].sort((a,b)=>b.valor-a.valor).filter(r=>r.valor>0).slice(0,5).map(r=>({nombre:r.nombre,valor:r.valor,link:r.link,fuente:r.fuente,titulo:r.titulo}));
   const t5cg=[...combined].sort((a,b)=>b.costo-a.costo).filter(r=>r.costo>0).slice(0,5).map(r=>({nombre:r.nombre,valor:r.costo,link:r.link,fuente:r.fuente,titulo:r.titulo}));
   const t5af={...sp.top5AlcPorFuente,...mp.top5AlcPorFuente};
   const t5cf={...sp.top5CostPorFuente,...mp.top5CostPorFuente};
@@ -516,15 +516,20 @@ FORMATO: JSON válido sin markdown ni backticks. NO uses saltos de línea dentro
 
       /* ── Helpers ── */
       const capEl=async(e:HTMLElement,bg="#ffffff"):Promise<{d:Uint8Array;w:number;h:number}>=>{
-        /* Temporarily remove overflow-hidden to prevent clipping */
-        const origOverflow=e.style.overflow;e.style.overflow="visible";
-        const parent=e.parentElement;const parentOverflow=parent?parent.style.overflow:"";
-        if(parent)parent.style.overflow="visible";
-        /* Use actual rendered width */
+        /* Temporarily remove ALL overflow clipping from element and ancestors */
+        const saved:Map<HTMLElement,{ov:string;cls:string}>=new Map();
+        let node:HTMLElement|null=e;
+        while(node&&node!==document.body){
+          const orig={ov:node.style.overflow,cls:node.className};
+          if(node.className.includes("overflow-hidden")){node.className=node.className.replace(/overflow-hidden/g,"overflow-visible")}
+          node.style.overflow="visible";
+          saved.set(node,orig);
+          node=node.parentElement;
+        }
         const actualW=Math.max(e.scrollWidth,e.offsetWidth,940);
-        const cv=await html2canvas(e,{scale:3,useCORS:true,logging:false,windowWidth:actualW+40,width:actualW,backgroundColor:bg});
-        /* Restore */
-        e.style.overflow=origOverflow;if(parent)parent.style.overflow=parentOverflow;
+        const cv=await html2canvas(e,{scale:3,useCORS:true,logging:false,windowWidth:actualW+20,width:actualW,backgroundColor:bg});
+        /* Restore all */
+        saved.forEach((orig,el)=>{el.style.overflow=orig.ov;el.className=orig.cls});
         const du=cv.toDataURL("image/png");const b=atob(du.split(",")[1]);
         const a=new Uint8Array(b.length);for(let j=0;j<b.length;j++)a[j]=b.charCodeAt(j);
         return{d:a,w:cv.width,h:cv.height};
@@ -688,9 +693,19 @@ FORMATO: JSON válido sin markdown ni backticks. NO uses saltos de línea dentro
         ch.push(new Paragraph({children:[new PageBreak()]}));
       }
 
-      /* REMAINING: process each section */
-      for(let i=1;i<secs.length;i++){
-        const sec=secs[i] as HTMLElement;
+      /* REMAINING: process each section in visual order */
+      const secEls=Array.from(secs).slice(1);
+      /* Sort by CSS order property to respect user reordering */
+      secEls.sort((a,b)=>{
+        const oa=parseInt(window.getComputedStyle(a).order)||0;
+        const ob=parseInt(window.getComputedStyle(b).order)||0;
+        return oa-ob;
+      });
+
+      for(const secEl of secEls){
+        const sec=secEl as HTMLElement;
+        /* Skip empty/hidden sections (disabled modules won't render in DOM) */
+        if(!sec.offsetHeight||sec.offsetHeight<10)continue;
         const h2=sec.querySelector("h2");
         const secTitle=h2?.textContent?.trim()||"";
 
@@ -804,7 +819,11 @@ FORMATO: JSON válido sin markdown ni backticks. NO uses saltos de línea dentro
       const html2canvas=(await import("html2canvas")).default;
       const{jsPDF}=await import("jspdf");
       const el=reportContainerRef.current;
-      const sections=el.querySelectorAll(":scope > div");
+      const sections=Array.from(el.querySelectorAll(":scope > div")).sort((a,b)=>{
+        const oa=parseInt(window.getComputedStyle(a).order)||0;
+        const ob=parseInt(window.getComputedStyle(b).order)||0;
+        return oa-ob;
+      }).filter(s=>(s as HTMLElement).offsetHeight>10);
       const pdf=new jsPDF("p","mm","a4");
       const pdfW=210;const pdfH=297;const margin=8;const contentW=pdfW-margin*2;
       let curY=margin;let firstPage=true;
@@ -957,7 +976,8 @@ FORMATO: JSON válido sin markdown ni backticks. NO uses saltos de línea dentro
               {label:"Persona pública / Político",text:"Actúa como consultor senior en comunicación política y opinión pública. Analiza el posicionamiento del personaje: narrativas a favor y en contra, temas que generan polarización, actores que amplifican o contrarrestan. Evalúa capital político y vulnerabilidades. Identifica oportunidades de posicionamiento estratégico."},
               {label:"Gobierno / Institución",text:"Actúa como analista senior en comunicación gubernamental. Evalúa la percepción ciudadana: políticas públicas más comentadas, nivel de aprobación implícito en la conversación, temas de crisis, voceros efectivos e inefectivos. Identifica narrativas de oposición y oportunidades de comunicación proactiva."},
               {label:"Evento / Experiencia",text:"Actúa como analista senior en entretenimiento y experiencias. Analiza la percepción del público: expectativas vs realidad, viralidad del contenido generado por asistentes, comparación con eventos similares. Evalúa drivers de satisfacción e insatisfacción (precio, accesibilidad, experiencia). Identifica influencers clave."},
-              {label:"Crisis / Contingencia",text:"Actúa como consultor senior en gestión de crisis. Identifica: origen y detonador de la crisis, velocidad de propagación, actores principales, narrativas dominantes. Evalúa el nivel de daño reputacional, efectividad de la respuesta institucional. Prioriza acciones inmediatas de contención y estrategia de recuperación."}
+              {label:"Crisis / Contingencia",text:"Actúa como consultor senior en gestión de crisis. Identifica: origen y detonador de la crisis, velocidad de propagación, actores principales, narrativas dominantes. Evalúa el nivel de daño reputacional, efectividad de la respuesta institucional. Prioriza acciones inmediatas de contención y estrategia de recuperación."},
+              {label:"Industria / Sector",text:"Actúa como analista senior de inteligencia sectorial. Evalúa las tendencias del sector: actores principales, regulaciones, competitividad, innovación y disrupciones. Analiza la percepción pública del sector, identifica riesgos regulatorios y reputacionales compartidos. Compara el posicionamiento de las empresas mencionadas dentro del ecosistema sectorial y detecta oportunidades de diferenciación."}
             ].map((ex,ei)=>(<button key={ei} onClick={()=>setPromptConfig(p=>({...p,instructions:ex.text}))} className="text-left px-2.5 py-1.5 rounded-lg border border-gray-100 text-[10px] text-gray-500 bg-gray-50/50 hover:bg-purple-50 hover:border-purple-200 cursor-pointer transition-all" style={{borderStyle:"solid"}}><span className="font-bold text-gray-700">{ex.label}:</span> {ex.text.substring(0,80)}...</button>))}</div></div></div>
             <div><label className="text-[11px] text-gray-500 font-medium block mb-1">Alcance de datos para IA</label><select value={promptConfig.dataScope} onChange={e=>setPromptConfig(p=>({...p,dataScope:e.target.value}))} className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm outline-none"><option value="top50">Top 50 menciones (rápido, menor costo)</option><option value="top100">Top 100 menciones (balance)</option><option value="all">Toda la información (más profundo, mayor costo)</option></select><p className="text-[10px] text-gray-400 mt-1">A mayor alcance, el análisis es más profundo pero consume más tokens.</p></div>
           </div>
