@@ -34,6 +34,15 @@ interface Brand{name:string;primaryColor:string;secondaryColor:string;accentColo
 interface TrendRow{date:string;total:number;Positivo:number;Negativo:number;Neutro:number;[k:string]:string|number}
 interface FuenteRow{fuente:string;Positivo:number;Negativo:number;Neutro:number;total:number}
 interface KpiFuente{fuente:string;menciones:number;interacciones:number;impresiones:number;lideres:number;costo:number}
+
+/* ═══ MULTI-SUBJECT ═══ */
+interface Subject{
+  id:string;name:string;focus:string;tone:string;instructions:string;
+  sData:SocialRow[];mData:MediaRow[];
+  pd:PData|null;sPd:PData|null;mPd:PData|null;
+  aiTexts:Record<string,string>;tab:"social"|"media"|"fusionado";
+  fileName:string;
+}
 interface Top5Item{nombre:string;valor:number;link:string;fuente:string;titulo:string}
 interface PData{
   dataType:"social"|"media"|"fusionado";totalMenciones:number;totalAlcance:number;totalInteracciones:number;autoresUnicos:number;totalCosto:number;
@@ -495,6 +504,93 @@ FORMATO: JSON válido sin markdown ni backticks. NO uses saltos de línea dentro
   },[geminiKey,pd,promptConfig,callGemini,tab]);
   const[showExport,setShowExport]=useState(false);
   const[exportLoading,setExportLoading]=useState("");
+  /* ═══ Multi-Subject State ═══ */
+  const[subjects,setSubjects]=useState<Subject[]>([]);
+  const[multiTitle,setMultiTitle]=useState("Reporte Multi-Sujeto");
+  const[multiDateStart,setMultiDateStart]=useState("");
+  const[multiDateEnd,setMultiDateEnd]=useState("");
+  const[multiPeriod,setMultiPeriod]=useState("");
+  const[multiAiLoading,setMultiAiLoading]=useState(false);
+  const[multiGenerated,setMultiGenerated]=useState(false);
+  const multiReportRef=useRef<HTMLDivElement>(null);
+
+  const addSubject=()=>{setSubjects(s=>[...s,{id:Date.now().toString(),name:"",focus:"",tone:"profesional y analítico",instructions:"",sData:[],mData:[],pd:null,sPd:null,mPd:null,aiTexts:{},tab:"social",fileName:""}])};
+  const removeSubject=(id:string)=>{setSubjects(s=>s.filter(x=>x.id!==id))};
+  const updateSubject=(id:string,updates:Partial<Subject>)=>{setSubjects(s=>s.map(x=>x.id===id?{...x,...updates}:x))};
+
+  const handleMultiFile=async(subjectId:string,file:File)=>{
+    try{
+      const{social,media}=await parseExcel(file);
+      const updates:Partial<Subject>={sData:social,mData:media,fileName:file.name};
+      /* Auto-process */
+      if(social.length>0&&media.length>0){
+        const sp=processSocial(social);const mp=processMedia(media);
+        updates.pd=processFusionado(sp,mp);updates.sPd=sp;updates.mPd=mp;updates.tab="fusionado";
+      }else if(social.length>0){
+        const sp=processSocial(social);updates.pd=sp;updates.sPd=sp;updates.tab="social";
+      }else if(media.length>0){
+        const mp=processMedia(media);updates.pd=mp;updates.mPd=mp;updates.tab="media";
+      }
+      updateSubject(subjectId,updates);
+    }catch(e){console.error(e);alert("Error al procesar archivo: "+String(e))}
+  };
+
+  /* Single Gemini call for ALL subjects */
+  const generateMultiAI=async()=>{
+    if(!geminiKey||subjects.length===0)return;
+    setMultiAiLoading(true);
+    try{
+      /* Build a mega-prompt with all subjects */
+      let megaPrompt="Eres un analista senior de monitoreo de medios.\nGenera un análisis COMPLETO para CADA sujeto listado abajo.\n\n";
+      megaPrompt+="RESPONDE EXCLUSIVAMENTE con un JSON válido. La estructura es:\n{\n";
+      megaPrompt+=subjects.map(s=>'  "'+s.name+'": { "resumen":"...", "temas":"[array JSON]", "picos":"...", "sentimiento":"...", "tendSent":"...", "fuentes":"...", "hora":"...", "conclusiones":"...", "recomendaciones":"..." }').join(",\n");
+      megaPrompt+="\n}\n\n";
+      megaPrompt+="REGLAS:\n- Cada sección usa \" || \" para separar párrafos\n- Nombres de medios/usuarios con ***nombre***\n- Citas con [Ver fuente](URL)\n- NUNCA cuestionar la clasificación de sentimiento\n- Cada sujeto tiene su análisis INDEPENDIENTE\n\n";
+
+      for(const sub of subjects){
+        if(!sub.pd)continue;
+        const d=sub.pd;
+        megaPrompt+="\n═══════════════════════════════════════\n";
+        megaPrompt+="SUJETO: "+sub.name+"\n";
+        if(sub.focus)megaPrompt+="ENFOQUE: "+sub.focus+"\n";
+        if(sub.tone)megaPrompt+="TONO: "+sub.tone+"\n";
+        if(sub.instructions)megaPrompt+="INSTRUCCIONES: "+sub.instructions+"\n";
+        megaPrompt+="TIPO: "+(d.dataType==="social"?"Redes Sociales":d.dataType==="media"?"Medios Tradicionales":"Redes + Medios")+"\n";
+        megaPrompt+="MENCIONES: "+d.totalMenciones+" | ALCANCE: "+d.totalAlcance+" | SENT.NETO: "+d.sentNeto.toFixed(1)+"%\n";
+        megaPrompt+="POSITIVO: "+d.sentCounts.Positivo+" | NEGATIVO: "+d.sentCounts.Negativo+" | NEUTRO: "+d.sentCounts.Neutro+"\n";
+        /* Top mentions */
+        const topP=d.topPositivas.slice(0,3).map(r=>r.autor+": "+r.contenido.substring(0,100)+" ["+r.link+"]").join("\n");
+        const topN=d.topNegativas.slice(0,3).map(r=>r.autor+": "+r.contenido.substring(0,100)+" ["+r.link+"]").join("\n");
+        if(topP)megaPrompt+="POSITIVAS:\n"+topP+"\n";
+        if(topN)megaPrompt+="NEGATIVAS:\n"+topN+"\n";
+        megaPrompt+="═══════════════════════════════════════\n";
+      }
+
+      const result=await callGemini(megaPrompt);
+      if(!result)throw new Error("Sin respuesta");
+
+      /* Parse response - expect {subjectName: {key:value}} */
+      let raw=result.text||"";
+      raw=raw.replace(/```json|```/g,"").trim();
+      const fi=raw.indexOf("{");const li=raw.lastIndexOf("}");
+      if(fi>=0&&li>fi)raw=raw.substring(fi,li+1);
+      const parsed=JSON.parse(raw);
+
+      /* Assign AI texts to each subject */
+      for(const sub of subjects){
+        const subData=parsed[sub.name];
+        if(!subData)continue;
+        const aiTexts:Record<string,string>={};
+        const keys=["resumen","picos","sentimiento","tendSent","fuentes","hora","conclusiones","recomendaciones"];
+        keys.forEach(k=>{if(subData[k]){const v=subData[k];aiTexts[k]=typeof v==="string"?v:Array.isArray(v)?v.map(String).join(" || "):JSON.stringify(v)}});
+        if(subData.temas)aiTexts.temas=typeof subData.temas==="string"?subData.temas:JSON.stringify(subData.temas);
+        updateSubject(sub.id,{aiTexts});
+      }
+      setMultiGenerated(true);
+    }catch(e){console.error("Multi AI error:",e);alert("Error al generar análisis multi-sujeto: "+String(e))}
+    setMultiAiLoading(false);
+  };
+
   const reportContainerRef=useRef<HTMLDivElement>(null);
 
   /* ═══ EXPORT: WORD (HTML-based, zero dependencies) ═══ */
@@ -949,7 +1045,7 @@ FORMATO: JSON válido sin markdown ni backticks. NO uses saltos de línea dentro
   const handleDragEnd=()=>{dragRef.current=null};
   const secNum=(name:string)=>{let n=0;for(const s of curOrder){if(curEnabled[s]!==false)n++;if(s===name)return n}return 0};
 
-  const navItems=[{id:"home",icon:<BarChart3 size={18}/>,label:"Inicio"},{id:"upload",icon:<Upload size={18}/>,label:"Subir Datos"},{id:"brandkit",icon:<Palette size={18}/>,label:"Identidad"},{id:"preview",icon:<Eye size={18}/>,label:"Reporte"}];
+  const navItems=[{id:"home",icon:<BarChart3 size={18}/>,label:"Inicio"},{id:"upload",icon:<Upload size={18}/>,label:"Subir Datos"},{id:"brandkit",icon:<Palette size={18}/>,label:"Identidad"},{id:"preview",icon:<Eye size={18}/>,label:"Reporte"},{id:"multi",icon:<Users size={18}/>,label:"Multi-Sujeto"}];
 
   return(
     <div className="flex h-screen overflow-hidden" style={{fontFamily:"'Inter',sans-serif",background:"#f8f9fb"}}>
@@ -960,7 +1056,7 @@ FORMATO: JSON válido sin markdown ni backticks. NO uses saltos de línea dentro
         <div className="px-5"><div className="p-3 rounded-lg" style={{background:"rgba(59,130,246,0.08)"}}><div className="flex items-center gap-1.5 mb-1"><Sparkles size={12} color="#60a5fa"/><span className="text-[10px] font-semibold text-blue-400">IA Integrada</span></div><p className="text-[10px] text-gray-400 leading-snug">Análisis automáticos</p></div></div>
       </div>
       <div className="flex-1 overflow-auto">
-        {view==="home"&&(<div className="p-10 max-w-[860px] mx-auto"><h1 className="text-3xl font-extrabold text-gray-900 mb-1.5" style={{fontFamily:"'Inter'"}}>Bienvenido a ReporteaJDOR</h1><p className="text-[15px] text-gray-500 mb-9">Genera reportes de monitoreo con análisis por IA.</p><div className="grid grid-cols-2 gap-4">{[{icon:<Upload size={22} color="white"/>,t:"Subir Datos",d:"Excel de redes o medios",v:"upload",g:"linear-gradient(135deg,#3b82f6,#2563eb)"},{icon:<Palette size={22} color="white"/>,t:"Identidad",d:"Colores, logo y tipografía",v:"brandkit",g:"linear-gradient(135deg,#f59e0b,#d97706)"},{icon:<Eye size={22} color="white"/>,t:"Ver Reporte",d:"Todas las secciones",v:"preview",g:"linear-gradient(135deg,#10b981,#059669)"}].map((c,i)=>(<button key={i} onClick={()=>setView(c.v)} className="flex items-start gap-3.5 p-6 bg-white border border-gray-100 rounded-2xl cursor-pointer text-left hover:-translate-y-0.5 hover:shadow-lg transition-all"><div className="w-[46px] h-[46px] rounded-xl flex items-center justify-center flex-shrink-0" style={{background:c.g}}>{c.icon}</div><div><div className="text-[15px] font-bold text-gray-900 mb-0.5" style={{fontFamily:"'Inter'"}}>{c.t}</div><div className="text-xs text-gray-500">{c.d}</div></div></button>))}</div></div>)}
+        {view==="home"&&(<div className="p-10 max-w-[860px] mx-auto"><h1 className="text-3xl font-extrabold text-gray-900 mb-1.5" style={{fontFamily:"'Inter'"}}>Bienvenido a ReporteaJDOR</h1><p className="text-[15px] text-gray-500 mb-9">Genera reportes de monitoreo con análisis por IA.</p><div className="grid grid-cols-2 gap-4">{[{icon:<Upload size={22} color="white"/>,t:"Subir Datos",d:"Excel de redes o medios",v:"upload",g:"linear-gradient(135deg,#3b82f6,#2563eb)"},{icon:<Palette size={22} color="white"/>,t:"Identidad",d:"Colores, logo y tipografía",v:"brandkit",g:"linear-gradient(135deg,#f59e0b,#d97706)"},{icon:<Eye size={22} color="white"/>,t:"Ver Reporte",d:"Todas las secciones",v:"preview",g:"linear-gradient(135deg,#10b981,#059669)"},{icon:<Users size={22} color="white"/>,t:"Multi-Sujeto",d:"Varios sujetos en un reporte",v:"multi",g:"linear-gradient(135deg,#8b5cf6,#7c3aed)"}].map((c,i)=>(<button key={i} onClick={()=>setView(c.v)} className="flex items-start gap-3.5 p-6 bg-white border border-gray-100 rounded-2xl cursor-pointer text-left hover:-translate-y-0.5 hover:shadow-lg transition-all"><div className="w-[46px] h-[46px] rounded-xl flex items-center justify-center flex-shrink-0" style={{background:c.g}}>{c.icon}</div><div><div className="text-[15px] font-bold text-gray-900 mb-0.5" style={{fontFamily:"'Inter'"}}>{c.t}</div><div className="text-xs text-gray-500">{c.d}</div></div></button>))}</div></div>)}
         {view==="upload"&&(<div className="p-10 max-w-[660px] mx-auto"><h1 className="text-2xl font-extrabold text-gray-900 mb-1" style={{fontFamily:"'Inter'"}}>Subir Datos</h1><p className="text-sm text-gray-500 mb-7">Carga tu archivo Excel.</p><input ref={fileRef} type="file" accept=".xlsx,.xls" className="hidden" onChange={handleFile}/><div onClick={()=>fileRef.current?.click()} className="border-2 border-dashed border-gray-300 rounded-2xl py-12 px-8 text-center bg-white cursor-pointer hover:border-blue-400 transition-all"><div className="w-16 h-16 rounded-full bg-blue-50 flex items-center justify-center mx-auto mb-4"><FileSpreadsheet size={28} color="#3b82f6"/></div><div className="text-[15px] font-bold text-gray-900 mb-1">Selecciona tu archivo Excel</div><div className="text-xs text-gray-400 mb-4">.xlsx o .xls</div><div className="inline-block px-5 py-2 rounded-lg text-sm font-semibold text-white" style={{background:"linear-gradient(135deg,#3b82f6,#2563eb)"}}>Seleccionar</div></div>{uploadStatus&&<div className="mt-4 p-4 bg-blue-50 rounded-xl border border-blue-200"><p className="text-sm text-blue-700 font-medium">{uploadStatus}</p></div>}<div className="mt-6 grid gap-2.5"><input value={reportTitle} onChange={e=>setReportTitle(e.target.value)} placeholder="Título del reporte" className="px-3.5 py-2.5 rounded-lg border border-gray-200 text-sm outline-none focus:border-blue-400"/><input value={reportSubject} onChange={e=>setReportSubject(e.target.value)} placeholder="Sujeto monitoreado" className="px-3.5 py-2.5 rounded-lg border border-gray-200 text-sm outline-none focus:border-blue-400"/><div className="grid grid-cols-2 gap-2.5"><div><label className="text-[10px] text-gray-400 mb-0.5 block">Fecha inicio</label><input type="date" value={dateStart} onChange={e=>{setDateStart(e.target.value);setReportPeriod(fmtPeriod(e.target.value,dateEnd))}} className="w-full px-3.5 py-2.5 rounded-lg border border-gray-200 text-sm outline-none focus:border-blue-400"/></div><div><label className="text-[10px] text-gray-400 mb-0.5 block">Fecha fin</label><input type="date" value={dateEnd} onChange={e=>{setDateEnd(e.target.value);setReportPeriod(fmtPeriod(dateStart,e.target.value))}} className="w-full px-3.5 py-2.5 rounded-lg border border-gray-200 text-sm outline-none focus:border-blue-400"/></div></div>{reportPeriod&&<div className="text-xs text-gray-500 mt-1 ml-1">Periodo: {reportPeriod}</div>}</div>{(sData.length>0||mData.length>0)&&<button onClick={()=>setView("preview")} className="mt-5 w-full py-3 rounded-xl text-sm font-bold text-white border-none cursor-pointer" style={{background:"linear-gradient(135deg,#10b981,#059669)"}}>Ver Reporte</button>}</div>)}
         {view==="brandkit"&&(<div className="p-10 max-w-[740px] mx-auto"><h1 className="text-2xl font-extrabold text-gray-900 mb-7" style={{fontFamily:"'Inter'"}}>Identidad Corporativa</h1>
           <div className="bg-white rounded-xl p-6 border border-gray-100 mb-5"><div className="text-sm font-bold text-gray-700 mb-3">Logo</div><input ref={logoRef} type="file" accept="image/*" className="hidden" onChange={handleLogo}/><div className="flex items-center gap-4 flex-wrap"><button onClick={()=>logoRef.current?.click()} className="px-4 py-2 rounded-lg text-xs font-semibold text-white border-none cursor-pointer" style={{background:"linear-gradient(135deg,#3b82f6,#2563eb)"}}><ImageIcon size={14} className="inline mr-1"/>Cargar Logo</button>{logo&&<img src={logo} alt="Logo" style={{height:logoSize,objectFit:"contain"}}/>}<div className="flex gap-1">{(["left","center","right"] as const).map(a=>(<button key={a} onClick={()=>setLogoAlign(a)} className="px-2 py-1 rounded text-[10px] border cursor-pointer" style={{background:logoAlign===a?"#3b82f6":"white",color:logoAlign===a?"white":"#64748b",borderColor:logoAlign===a?"#3b82f6":"#e2e8f0"}}>{a==="left"?"Izq":a==="center"?"Centro":"Der"}</button>))}</div></div>{logo&&<div className="mt-3"><label className="text-[11px] text-gray-500 font-medium">Tamaño: {logoSize}px</label><input type="range" min={24} max={120} value={logoSize} onChange={e=>setLogoSize(Number(e.target.value))} className="w-full accent-blue-500"/></div>}</div>
@@ -1078,6 +1174,142 @@ FORMATO: JSON válido sin markdown ni backticks. NO uses saltos de línea dentro
             </div>
           </div>
         )}
+        {/* ══════ MULTI-SUBJECT SETUP ══════ */}
+        {view==="multi"&&!multiGenerated&&(<div className="p-10 max-w-[860px] mx-auto">
+          <h1 className="text-2xl font-extrabold text-gray-900 mb-1" style={{fontFamily:"'Inter'"}}>Reporte de Múltiples Sujetos</h1>
+          <p className="text-sm text-gray-500 mb-7">Genera un reporte con varios sujetos en un solo documento.</p>
+
+          {/* Global config */}
+          <div className="bg-white rounded-xl p-5 border border-gray-100 mb-5">
+            <div className="text-sm font-bold text-gray-700 mb-3">Configuración General</div>
+            <div className="grid gap-2.5">
+              <input value={multiTitle} onChange={e=>setMultiTitle(e.target.value)} placeholder="Título del reporte" className="px-3.5 py-2.5 rounded-lg border border-gray-200 text-sm outline-none focus:border-blue-400"/>
+              <div className="grid grid-cols-2 gap-2.5">
+                <div><label className="text-[10px] text-gray-400 mb-0.5 block">Fecha inicio</label><input type="date" value={multiDateStart} onChange={e=>{setMultiDateStart(e.target.value);setMultiPeriod(fmtPeriod(e.target.value,multiDateEnd))}} className="w-full px-3.5 py-2.5 rounded-lg border border-gray-200 text-sm outline-none focus:border-blue-400"/></div>
+                <div><label className="text-[10px] text-gray-400 mb-0.5 block">Fecha fin</label><input type="date" value={multiDateEnd} onChange={e=>{setMultiDateEnd(e.target.value);setMultiPeriod(fmtPeriod(multiDateStart,e.target.value))}} className="w-full px-3.5 py-2.5 rounded-lg border border-gray-200 text-sm outline-none focus:border-blue-400"/></div>
+              </div>
+              {multiPeriod&&<div className="text-xs text-gray-500 ml-1">Periodo: {multiPeriod}</div>}
+            </div>
+          </div>
+
+          {/* Subjects list */}
+          {subjects.map((sub,si)=>(<div key={sub.id} className="bg-white rounded-xl p-5 border border-gray-100 mb-4">
+            <div className="flex justify-between items-center mb-3">
+              <div className="text-sm font-bold text-gray-700">Sujeto {si+1}</div>
+              <button onClick={()=>removeSubject(sub.id)} className="text-xs text-red-400 bg-transparent border-none cursor-pointer hover:text-red-600">Eliminar</button>
+            </div>
+            <div className="grid gap-2.5">
+              <input value={sub.name} onChange={e=>updateSubject(sub.id,{name:e.target.value})} placeholder="Nombre del sujeto (ej: Claudia Sheinbaum)" className="px-3.5 py-2.5 rounded-lg border border-gray-200 text-sm outline-none focus:border-blue-400"/>
+              <div className="grid grid-cols-2 gap-2.5">
+                <select value={sub.focus} onChange={e=>updateSubject(sub.id,{focus:e.target.value})} className="px-3 py-2.5 rounded-lg border border-gray-200 text-sm outline-none">
+                  <option value="">Tipo de sujeto...</option>
+                  <option value="Marca / Producto">Marca / Producto</option>
+                  <option value="Persona pública / Político">Persona pública / Político</option>
+                  <option value="Gobierno / Institución">Gobierno / Institución</option>
+                  <option value="Evento / Experiencia">Evento / Experiencia</option>
+                  <option value="Industria / Sector">Industria / Sector</option>
+                  <option value="Crisis / Contingencia">Crisis / Contingencia</option>
+                </select>
+                <select value={sub.tone} onChange={e=>updateSubject(sub.id,{tone:e.target.value})} className="px-3 py-2.5 rounded-lg border border-gray-200 text-sm outline-none">
+                  <option value="profesional y analítico">Profesional y analítico</option>
+                  <option value="ejecutivo y directo">Ejecutivo y directo</option>
+                  <option value="periodístico y narrativo">Periodístico y narrativo</option>
+                  <option value="académico y riguroso">Académico y riguroso</option>
+                </select>
+              </div>
+              <textarea value={sub.instructions} onChange={e=>updateSubject(sub.id,{instructions:e.target.value})} placeholder="Instrucciones adicionales para la IA (opcional)" rows={2} className="px-3.5 py-2.5 rounded-lg border border-gray-200 text-sm outline-none focus:border-blue-400 resize-y"/>
+
+              {/* File upload */}
+              <div className="flex items-center gap-3">
+                <input type="file" accept=".xlsx,.xls" className="hidden" id={"multi-file-"+sub.id} onChange={e=>{if(e.target.files?.[0])handleMultiFile(sub.id,e.target.files[0])}}/>
+                <button onClick={()=>document.getElementById("multi-file-"+sub.id)?.click()} className="px-4 py-2 rounded-lg text-xs font-semibold text-white border-none cursor-pointer" style={{background:"linear-gradient(135deg,#3b82f6,#2563eb)"}}>
+                  <span className="flex items-center gap-1.5"><FileSpreadsheet size={14}/> {sub.fileName||"Cargar Excel"}</span>
+                </button>
+                {sub.pd&&<div className="flex gap-2 text-[11px]">
+                  {sub.sData.length>0&&<span className="text-green-500">{sub.pd.dataType==="fusionado"?sub.sData.length:sub.pd.totalMenciones} redes</span>}
+                  {sub.mData.length>0&&<span className="text-blue-500">{sub.pd.dataType==="fusionado"?sub.mData.length:sub.pd.totalMenciones} medios</span>}
+                  <span className="text-gray-400">({sub.pd.dataType})</span>
+                </div>}
+              </div>
+            </div>
+          </div>))}
+
+          {/* Add subject button */}
+          <button onClick={addSubject} className="w-full py-3 rounded-xl text-sm font-bold border-2 border-dashed border-gray-300 bg-white cursor-pointer hover:border-blue-400 hover:text-blue-600 text-gray-500 transition-all flex items-center justify-center gap-2">
+            <span className="text-lg">+</span> Agregar nuevo sujeto
+          </button>
+
+          {/* Generate button */}
+          {subjects.length>0&&subjects.some(s=>s.pd)&&(
+            <div className="mt-6 flex gap-3">
+              {geminiKey&&<button onClick={generateMultiAI} disabled={multiAiLoading} className="flex-1 py-3 rounded-xl text-sm font-bold text-white border-none cursor-pointer flex items-center justify-center gap-2" style={{background:multiAiLoading?"#94a3b8":"linear-gradient(135deg,#8b5cf6,#7c3aed)"}}>
+                {multiAiLoading?<><RefreshCw size={14} className="animate-spin"/> Generando análisis...</>:<><Sparkles size={14}/> Generar análisis IA ({subjects.filter(s=>s.pd).length} sujetos)</>}
+              </button>}
+              <button onClick={()=>setMultiGenerated(true)} className="px-6 py-3 rounded-xl text-sm font-bold text-white border-none cursor-pointer" style={{background:"linear-gradient(135deg,#10b981,#059669)"}}>
+                Ver Reporte
+              </button>
+            </div>
+          )}
+
+          {!geminiKey&&<div className="mt-4 p-4 bg-amber-50 rounded-xl border border-amber-200">
+            <p className="text-sm text-amber-700">Configura tu API Key de Gemini en <button onClick={()=>setView("brandkit")} className="font-bold underline bg-transparent border-none cursor-pointer text-amber-700">Identidad</button> para generar análisis.</p>
+          </div>}
+        </div>)}
+
+        {/* ══════ MULTI-SUBJECT PREVIEW ══════ */}
+        {view==="multi"&&multiGenerated&&(<div className="flex-1 overflow-y-auto bg-gray-50 p-7">
+          <div className="flex items-center gap-3 mb-5">
+            <button onClick={()=>setMultiGenerated(false)} className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-white border border-gray-200 cursor-pointer hover:bg-gray-50">← Configurar</button>
+            <span className="text-lg font-bold text-gray-800">{multiTitle}</span>
+            {multiPeriod&&<span className="text-xs text-gray-400">{multiPeriod}</span>}
+          </div>
+          <div ref={multiReportRef} className="space-y-10">
+            {subjects.filter(s=>s.pd).map((sub)=>{
+              const spd=sub.pd!;const aiT=(k:string,fb:string)=>{const v=sub.aiTexts[k];return v?(typeof v==="string"?v:String(v)):fb};
+              const temas=aiTemas(spd,sub.aiTexts);
+              return(<div key={sub.id} className="bg-white rounded-2xl overflow-hidden shadow-sm border border-gray-100">
+                {/* Per-subject banner */}
+                <div className="p-8 text-center" style={{background:"linear-gradient(135deg,"+brand.bannerPrimary+","+brand.bannerSecondary+")"}}>
+                  <div className="text-[10px] tracking-widest mb-1" style={{color:brand.titleTextColor+"80"}}>{multiTitle}</div>
+                  <div className="text-2xl font-extrabold mb-1" style={{color:brand.titleTextColor,fontFamily:brand.titleFont}}>{sub.name}</div>
+                  {multiPeriod&&<div className="text-sm" style={{color:brand.titleTextColor+"80"}}>{"Periodo: "+multiPeriod}</div>}
+                  <div className="mt-2"><span className="px-3 py-1 rounded-full text-[10px] font-semibold bg-white/10" style={{color:brand.titleTextColor+"99"}}>{spd.dataType==="social"?"Redes Sociales":spd.dataType==="media"?"Medios":spd.dataType==="fusionado"?"Medios + Redes":""} — {spd.totalMenciones} menciones</span></div>
+                </div>
+                {/* KPIs */}
+                <div className="p-6">
+                  <div className="text-base font-bold mb-4" style={{color:brand.primaryColor}}>Indicadores Clave</div>
+                  <div className="flex gap-3 flex-wrap mb-6">
+                    <KPI title="Menciones" value={spd.totalMenciones} icon={<MessageSquare size={14} color="#3b82f6"/>} color="#3b82f6" brand={brand}/>
+                    <KPI title="Alcance" value={fmt(spd.totalAlcance)} icon={<TrendingUp size={14} color="#8b5cf6"/>} color="#8b5cf6" brand={brand}/>
+                    {spd.totalInteracciones>0&&<KPI title="Interacciones" value={fmt(spd.totalInteracciones)} icon={<Globe size={14} color="#10b981"/>} color="#10b981" brand={brand}/>}
+                    {spd.totalCosto>0&&<KPI title="Costo/AVE" value={fmtM(spd.totalCosto)} icon={<DollarSign size={14} color="#f59e0b"/>} color="#f59e0b" brand={brand}/>}
+                    <KPI title="Sent. Neto" value={spd.sentNeto.toFixed(1)+"%"} icon={<BarChart3 size={14} color={spd.sentNeto>=0?"#10b981":"#ef4444"}/>} color={spd.sentNeto>=0?"#10b981":"#ef4444"} brand={brand}/>
+                  </div>
+                  {/* Resumen */}
+                  <div className="text-base font-bold mb-3" style={{color:brand.primaryColor}}>Resumen Ejecutivo</div>
+                  <AIBlock text={aiT("resumen",aiResumen(spd))} brand={brand} loading={false}/>
+                  {/* Temas */}
+                  {temas.length>0&&(<><div className="text-base font-bold mt-6 mb-3" style={{color:brand.primaryColor}}>Temas Clave</div>
+                    <div className="grid gap-3">{temas.map((t,ti)=>(<div key={ti} className="p-4 bg-gray-50 rounded-xl border border-gray-100">
+                      <div className="flex items-center gap-2 mb-2"><div className="w-6 h-6 rounded-full flex items-center justify-center text-[11px] font-bold text-white" style={{background:brand.chartColors[ti]}}>{ti+1}</div><span className="text-sm font-bold text-gray-800">{t.tema}</span></div>
+                      <p className="text-xs text-gray-600 leading-relaxed">{t.detalle}</p>
+                    </div>))}</div></>)}
+                  {/* Sentimiento */}
+                  <div className="text-base font-bold mt-6 mb-3" style={{color:brand.primaryColor}}>Análisis de Sentimiento</div>
+                  <div className="flex justify-center mb-4"><Donut data={spd.sentCounts} brand={brand} title="General"/></div>
+                  <AIBlock text={aiT("sentimiento",aiSent(spd))} brand={brand} loading={false}/>
+                  {/* Conclusiones */}
+                  <div className="text-base font-bold mt-6 mb-3" style={{color:brand.primaryColor}}>Conclusiones</div>
+                  <AIBlock text={aiT("conclusiones",aiConc(spd))} brand={brand} loading={false}/>
+                  {/* Recomendaciones */}
+                  <div className="text-base font-bold mt-6 mb-3" style={{color:brand.primaryColor}}>Recomendaciones Estratégicas</div>
+                  <AIBlock text={aiT("recomendaciones",aiRec(spd))} brand={brand} loading={false}/>
+                </div>
+              </div>);
+            })}
+          </div>
+        </div>)}
+
         {view==="preview"&&!pd&&(<div className="p-10 text-center"><p className="text-gray-500">Sube un archivo Excel para generar el reporte.</p><button onClick={()=>setView("upload")} className="mt-4 px-5 py-2 rounded-lg text-sm font-semibold text-white border-none cursor-pointer" style={{background:"linear-gradient(135deg,#3b82f6,#2563eb)"}}>Subir Datos</button></div>)}
       </div>
     </div>
