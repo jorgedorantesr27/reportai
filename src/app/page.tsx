@@ -516,22 +516,26 @@ FORMATO: JSON válido sin markdown ni backticks. NO uses saltos de línea dentro
 
       /* ── Helpers ── */
       const capEl=async(e:HTMLElement,bg="#ffffff"):Promise<{d:Uint8Array;w:number;h:number}>=>{
-        /* Temporarily remove ALL overflow clipping from element and ancestors */
-        const saved:Map<HTMLElement,{ov:string;cls:string;mw:string}>=new Map();
+        /* Temporarily widen container + remove overflow to capture full chart */
+        const saved:Map<HTMLElement,{ov:string;cls:string;mw:string;w:string}>=new Map();
         let node:HTMLElement|null=e;
         while(node&&node!==document.body){
-          const orig={ov:node.style.overflow,cls:node.className,mw:node.style.maxWidth};
-          if(node.className.includes("overflow-hidden")){node.className=node.className.replace(/overflow-hidden/g,"overflow-visible")}
-          node.style.overflow="visible";
-          node.style.maxWidth="none";
+          const orig={ov:node.style.overflow,cls:node.className,mw:node.style.maxWidth,w:node.style.width};
+          if(node.className.includes("overflow-hidden"))node.className=node.className.replace(/overflow-hidden/g,"overflow-visible");
+          if(node.className.includes("max-w-"))node.className=node.className.replace(/max-w-\[[^\]]+\]/g,"");
+          node.style.overflow="visible";node.style.maxWidth="none";node.style.width="auto";
           saved.set(node,orig);
           node=node.parentElement;
         }
-        /* Force reflow to get accurate dimensions */
+        /* Force reflow so ResponsiveContainer recalculates */
         void e.offsetWidth;
-        const cv=await html2canvas(e,{scale:3,useCORS:true,logging:false,windowWidth:1200,backgroundColor:bg});
+        window.dispatchEvent(new Event("resize"));
+        await new Promise(r=>setTimeout(r,300));
+        const w=e.scrollWidth||e.offsetWidth||940;
+        const cv=await html2canvas(e,{scale:2,useCORS:true,logging:false,windowWidth:w+20,backgroundColor:bg});
         /* Restore all */
-        saved.forEach((orig,el)=>{el.style.overflow=orig.ov;el.className=orig.cls;el.style.maxWidth=orig.mw});
+        saved.forEach((orig,el)=>{el.style.overflow=orig.ov;el.className=orig.cls;el.style.maxWidth=orig.mw;el.style.width=orig.w});
+        window.dispatchEvent(new Event("resize"));
         const du=cv.toDataURL("image/png");const b=atob(du.split(",")[1]);
         const a=new Uint8Array(b.length);for(let j=0;j<b.length;j++)a[j]=b.charCodeAt(j);
         return{d:a,w:cv.width,h:cv.height};
