@@ -516,16 +516,25 @@ FORMATO: JSON válido sin markdown ni backticks. NO uses saltos de línea dentro
 
       /* ── Helpers ── */
       const capEl=async(e:HTMLElement,bg="#ffffff"):Promise<{d:Uint8Array;w:number;h:number}>=>{
-        /* Inject global CSS to force overflow visible on EVERYTHING */
-        const style=document.createElement("style");
-        style.id="export-override";
-        style.textContent="#report-export-target,#report-export-target *{overflow:visible!important;max-width:none!important}";
-        document.head.appendChild(style);
-        void e.offsetWidth;/* force reflow */
-        const actualW=Math.max(e.scrollWidth,e.offsetWidth,960);
-        const cv=await html2canvas(e,{scale:2,useCORS:true,logging:false,windowWidth:actualW+60,backgroundColor:bg});
-        /* Remove override */
-        style.remove();
+        /* Temporarily remove overflow-hidden from element + descendants + ancestors */
+        const saved:Map<Element,{ov:string;cls:string}>=new Map();
+        const fix=(el:Element)=>{
+          const h=el as HTMLElement;
+          if(!h.style||!h.className||typeof h.className!=="string")return;
+          if(h.className.includes("overflow-hidden")||h.className.includes("overflow-x-auto")){
+            saved.set(el,{ov:h.style.overflow,cls:h.className});
+            h.className=h.className.replace(/overflow-hidden|overflow-x-auto/g,"overflow-visible");
+            h.style.overflow="visible";
+          }
+        };
+        /* Fix all descendants including element itself */
+        fix(e);e.querySelectorAll("*").forEach(fix);
+        /* Fix ancestors */
+        let p=e.parentElement;
+        while(p&&p!==document.body){fix(p);p=p.parentElement}
+        const cv=await html2canvas(e,{scale:2,useCORS:true,logging:false,windowWidth:2000,scrollX:0,scrollY:-window.scrollY,backgroundColor:bg});
+        /* Restore all */
+        saved.forEach((orig,el)=>{(el as HTMLElement).style.overflow=orig.ov;(el as HTMLElement).className=orig.cls});
         const du=cv.toDataURL("image/png");const b=atob(du.split(",")[1]);
         const a=new Uint8Array(b.length);for(let j=0;j<b.length;j++)a[j]=b.charCodeAt(j);
         return{d:a,w:cv.width,h:cv.height};
