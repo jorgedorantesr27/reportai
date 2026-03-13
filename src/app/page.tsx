@@ -527,14 +527,28 @@ FORMATO: JSON válido sin markdown ni backticks. NO uses saltos de línea dentro
           saved.set(node,orig);
           node=node.parentElement;
         }
-        /* Force reflow so ResponsiveContainer recalculates */
+        /* Force SVGs to full width - Recharts sets fixed width attributes */
+        const svgSaved:Map<SVGSVGElement,{w:string;vb:string|null}>=new Map();
+        e.querySelectorAll("svg.recharts-surface").forEach(svg=>{
+          const s=svg as SVGSVGElement;
+          svgSaved.set(s,{w:s.getAttribute("width")||"",vb:s.getAttribute("viewBox")});
+          const vb=s.getAttribute("viewBox");
+          if(vb){const parts=vb.split(" ");if(parts.length===4){s.setAttribute("viewBox","0 0 900 "+parts[3]);s.setAttribute("width","900")}}
+          else{s.setAttribute("width","900")}
+        });
+        /* Also widen ResponsiveContainer wrappers */
+        const rcSaved:Map<HTMLElement,string>=new Map();
+        e.querySelectorAll(".recharts-responsive-container").forEach(rc=>{
+          const h=rc as HTMLElement;rcSaved.set(h,h.style.width);h.style.width="900px";
+        });
         void e.offsetWidth;
-        window.dispatchEvent(new Event("resize"));
-        await new Promise(r=>setTimeout(r,300));
-        const w=e.scrollWidth||e.offsetWidth||940;
+        await new Promise(r=>setTimeout(r,50));
+        const w=Math.max(e.scrollWidth,e.offsetWidth,900);
         const cv=await html2canvas(e,{scale:2,useCORS:true,logging:false,windowWidth:w+20,backgroundColor:bg});
         /* Restore all */
         saved.forEach((orig,el)=>{el.style.overflow=orig.ov;el.className=orig.cls;el.style.maxWidth=orig.mw;el.style.width=orig.w});
+        svgSaved.forEach((orig,svg)=>{svg.setAttribute("width",orig.w);if(orig.vb)svg.setAttribute("viewBox",orig.vb)});
+        rcSaved.forEach((orig,el)=>{el.style.width=orig});
         window.dispatchEvent(new Event("resize"));
         const du=cv.toDataURL("image/png");const b=atob(du.split(",")[1]);
         const a=new Uint8Array(b.length);for(let j=0;j<b.length;j++)a[j]=b.charCodeAt(j);
