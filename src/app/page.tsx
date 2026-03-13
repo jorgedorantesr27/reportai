@@ -516,40 +516,33 @@ FORMATO: JSON válido sin markdown ni backticks. NO uses saltos de línea dentro
 
       /* ── Helpers ── */
       const capEl=async(e:HTMLElement,bg="#ffffff"):Promise<{d:Uint8Array;w:number;h:number}>=>{
-        /* Temporarily widen container + remove overflow to capture full chart */
-        const saved:Map<HTMLElement,{ov:string;cls:string;mw:string;w:string}>=new Map();
+        /* Remove overflow clipping from element, ALL descendants, and all ancestors */
+        const saved:Map<HTMLElement,{ov:string;cls:string}>=new Map();
+        /* Fix descendants (Sec cards have overflow-hidden) */
+        e.querySelectorAll("*").forEach(child=>{
+          const el=child as HTMLElement;
+          if(el.className&&typeof el.className==="string"&&el.className.includes("overflow-hidden")){
+            saved.set(el,{ov:el.style.overflow,cls:el.className});
+            el.className=el.className.replace(/overflow-hidden/g,"overflow-visible");
+            el.style.overflow="visible";
+          }
+        });
+        /* Fix ancestors */
         let node:HTMLElement|null=e;
         while(node&&node!==document.body){
-          const orig={ov:node.style.overflow,cls:node.className,mw:node.style.maxWidth,w:node.style.width};
-          if(node.className.includes("overflow-hidden"))node.className=node.className.replace(/overflow-hidden/g,"overflow-visible");
-          if(node.className.includes("max-w-"))node.className=node.className.replace(/max-w-\[[^\]]+\]/g,"");
-          node.style.overflow="visible";node.style.maxWidth="none";node.style.width="auto";
-          saved.set(node,orig);
+          if(!saved.has(node)){
+            const orig={ov:node.style.overflow,cls:node.className};
+            if(node.className&&typeof node.className==="string"&&node.className.includes("overflow-hidden"))node.className=node.className.replace(/overflow-hidden/g,"overflow-visible");
+            node.style.overflow="visible";
+            saved.set(node,orig);
+          }
           node=node.parentElement;
         }
-        /* Force SVGs to full width - Recharts sets fixed width attributes */
-        const svgSaved:Map<SVGSVGElement,{w:string;vb:string|null}>=new Map();
-        e.querySelectorAll("svg.recharts-surface").forEach(svg=>{
-          const s=svg as SVGSVGElement;
-          svgSaved.set(s,{w:s.getAttribute("width")||"",vb:s.getAttribute("viewBox")});
-          const vb=s.getAttribute("viewBox");
-          if(vb){const parts=vb.split(" ");if(parts.length===4){s.setAttribute("viewBox","0 0 900 "+parts[3]);s.setAttribute("width","900")}}
-          else{s.setAttribute("width","900")}
-        });
-        /* Also widen ResponsiveContainer wrappers */
-        const rcSaved:Map<HTMLElement,string>=new Map();
-        e.querySelectorAll(".recharts-responsive-container").forEach(rc=>{
-          const h=rc as HTMLElement;rcSaved.set(h,h.style.width);h.style.width="900px";
-        });
         void e.offsetWidth;
-        await new Promise(r=>setTimeout(r,50));
-        const w=Math.max(e.scrollWidth,e.offsetWidth,900);
-        const cv=await html2canvas(e,{scale:2,useCORS:true,logging:false,windowWidth:w+20,backgroundColor:bg});
+        const actualW=Math.max(e.scrollWidth,e.offsetWidth,940);
+        const cv=await html2canvas(e,{scale:2,useCORS:true,logging:false,windowWidth:actualW+40,backgroundColor:bg});
         /* Restore all */
-        saved.forEach((orig,el)=>{el.style.overflow=orig.ov;el.className=orig.cls;el.style.maxWidth=orig.mw;el.style.width=orig.w});
-        svgSaved.forEach((orig,svg)=>{svg.setAttribute("width",orig.w);if(orig.vb)svg.setAttribute("viewBox",orig.vb)});
-        rcSaved.forEach((orig,el)=>{el.style.width=orig});
-        window.dispatchEvent(new Event("resize"));
+        saved.forEach((orig,el)=>{el.style.overflow=orig.ov;if(typeof orig.cls==="string")el.className=orig.cls});
         const du=cv.toDataURL("image/png");const b=atob(du.split(",")[1]);
         const a=new Uint8Array(b.length);for(let j=0;j<b.length;j++)a[j]=b.charCodeAt(j);
         return{d:a,w:cv.width,h:cv.height};
