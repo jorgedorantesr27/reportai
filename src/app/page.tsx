@@ -1288,6 +1288,9 @@ FORMATO: JSON válido sin markdown ni backticks. NO uses saltos de línea dentro
             {multiPeriod&&<span className="text-xs text-gray-400">{multiPeriod}</span>}
             <span className="text-xs text-gray-400">{subjects.filter(s=>s.pd).length} sujetos</span>
             <div className="flex-1"/>
+            {/* Per-subject tab switchers */}
+            <div className="flex gap-2">{subjects.filter(s=>s.pd&&s.sData.length>0&&s.mData.length>0).length>0&&<span className="text-[10px] text-gray-400 mr-1">Vista:</span>}
+            {subjects.filter(s=>s.pd).map(sub=>(sub.sData.length>0&&sub.mData.length>0?<div key={sub.id} className="flex items-center gap-1 bg-gray-100 rounded-md px-1.5 py-0.5"><span className="text-[9px] text-gray-500 mr-1">{sub.name.substring(0,8)}:</span>{(["social","media","fusionado"] as const).map(t=><button key={t} onClick={()=>{let np:PData|null=null;let ns=sub.sPd;let nm=sub.mPd;if(t==="social"){const s=processSocial(sub.sData);np=s;ns=s}else if(t==="media"){const m=processMedia(sub.mData);np=m;nm=m}else{const s=processSocial(sub.sData);const m=processMedia(sub.mData);ns=s;nm=m;np=processFusionado(s,m)}updateSubject(sub.id,{tab:t,pd:np,sPd:ns,mPd:nm})}} className="px-1.5 py-0.5 rounded text-[9px] font-semibold border-none cursor-pointer" style={{background:sub.tab===t?"white":"transparent",color:sub.tab===t?"#3b82f6":"#94a3b8"}}>{t==="social"?"Redes":t==="media"?"Medios":"Ambos"}</button>)}</div>:null))}</div>
             <button onClick={async()=>{
               /* Export ALL subjects to single Word doc */
               setExportLoading("word");
@@ -1356,12 +1359,16 @@ FORMATO: JSON válido sin markdown ni backticks. NO uses saltos de línea dentro
                     ch.push(new Paragraph({alignment:AlignmentType.CENTER,spacing:{after:100},children:[new ImageRun({data:arrC,transformation:{width:cW2,height:cH},type:"png"})]}));
                     /* AI text for this chart */
                     const aiKey=chartEl.getAttribute("data-ai-key")||"";
-                    if(aiKey&&at[aiKey])ch.push(...aiP(at[aiKey]));
+                    if(aiKey){
+                      const fallbacks:Record<string,()=>string>={"fuentes":()=>aiFuentes(spd),"picos":()=>aiPicos(spd),"hora":()=>aiHora(spd),"sentimiento":()=>aiSent(spd),"tendSent":()=>aiTendSent(spd),"tier":()=>aiTier(spd),"top5med":()=>aiTop5Med(spd),"tipoNota":()=>aiTipoNota(spd),"estado":()=>aiEstado(spd),"topPub":()=>aiTopPub(),"picosRedes":()=>sub.sPd?aiPicos(sub.sPd):"","picosMedios":()=>sub.mPd?aiPicos(sub.mPd):""};
+                      const text=at[aiKey]||(fallbacks[aiKey]?fallbacks[aiKey]():"");
+                      if(text)ch.push(...aiP(text));
+                    }
                     ch.push(bl());
                   }
                   /* Text sections */
-                  const textSecs=[{t:"Resumen Ejecutivo",k:"resumen"},{t:"Conclusiones",k:"conclusiones"},{t:"Recomendaciones Estratégicas",k:"recomendaciones"}];
-                  for(const ts of textSecs){if(at[ts.k]){ch.push(hd(ts.t));ch.push(...aiP(at[ts.k]));ch.push(bl())}}
+                  const textSecs=[{t:"Resumen Ejecutivo",k:"resumen",fb:()=>aiResumen(spd)},{t:"Conclusiones",k:"conclusiones",fb:()=>aiConc(spd)},{t:"Recomendaciones Estratégicas",k:"recomendaciones",fb:()=>aiRec(spd)}];
+                  for(const ts of textSecs){const txt=at[ts.k]||ts.fb();if(txt){ch.push(hd(ts.t));ch.push(...aiP(txt));ch.push(bl())}}
                   /* Temas */
                   const temas=aiTemas(spd,at);
                   if(temas.length>0){ch.push(hd("Temas Clave Destacados"));
@@ -1440,7 +1447,7 @@ FORMATO: JSON válido sin markdown ni backticks. NO uses saltos de línea dentro
                 <Sec title="Análisis de Sentimiento" icon={<MessageSquare size={18} color={brand.accentColor}/>} brand={brand}>
                   <div data-multi-chart={sub.id} data-chart-title="Análisis de Sentimiento" data-ai-key="sentimiento">
                     <div className="flex justify-center mb-4"><Donut data={spd.sentCounts} brand={brand} title="General"/></div>
-                    <div className="flex gap-3 justify-center mb-4 overflow-x-auto">{spd.fuenteData.map((f,i)=><Donut key={i} data={{Positivo:f.Positivo,Negativo:f.Negativo,Neutro:f.Neutro}} brand={brand} title={f.fuente}/>)}</div>
+                    <div className="flex gap-3 justify-center mb-4 flex-wrap">{spd.fuenteData.map((f,i)=><Donut key={i} data={{Positivo:f.Positivo,Negativo:f.Negativo,Neutro:f.Neutro}} brand={brand} title={f.fuente}/>)}</div>
                   </div>
                   <AIBlock text={sAiT("sentimiento",aiSent(spd))} brand={brand} loading={false}/>
                 </Sec>
