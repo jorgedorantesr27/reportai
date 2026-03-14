@@ -302,6 +302,15 @@ const FUS_SECS=["Indicadores Clave","Distribución por Fuente","Resumen Ejecutiv
 /* PptxGenJS CDN types */
 interface PptxSlide{background:{fill:string};addText(t:string,o:Record<string,unknown>):void;addShape(t:string,o:Record<string,unknown>):void}
 interface PptxGen{layout:string;addSlide():PptxSlide;writeFile(o:{fileName:string}):void}
+function hex6(c:string){const h=c.replace("#","").replace(/[^0-9a-fA-F]/g,"");return h.length>=6?h.substring(0,6):h.padEnd(6,"0")}
+const PROMPT_TEMPLATES=[
+  {label:"Marca / Producto",text:"Actúa como analista senior de reputación corporativa. Evalúa la percepción de marca: posicionamiento vs competidores, drivers de preferencia, vulnerabilidades reputacionales. Identifica oportunidades de amplificación y riesgos de crisis. Analiza el sentimiento por atributo de marca (calidad, precio, servicio, innovación)."},
+  {label:"Persona pública / Político",text:"Actúa como consultor senior en comunicación política y opinión pública. Analiza el posicionamiento del personaje: narrativas a favor y en contra, temas que generan polarización, actores que amplifican o contrarrestan. Evalúa capital político y vulnerabilidades. Identifica oportunidades de posicionamiento estratégico."},
+  {label:"Gobierno / Institución",text:"Actúa como analista senior en comunicación gubernamental. Evalúa la percepción ciudadana: políticas públicas más comentadas, nivel de aprobación implícito en la conversación, temas de crisis, voceros efectivos e inefectivos. Identifica narrativas de oposición y oportunidades de comunicación proactiva."},
+  {label:"Evento / Experiencia",text:"Actúa como analista senior en entretenimiento y experiencias. Analiza la percepción del público: expectativas vs realidad, viralidad del contenido generado por asistentes, comparación con eventos similares. Evalúa drivers de satisfacción e insatisfacción (precio, accesibilidad, experiencia). Identifica influencers clave."},
+  {label:"Crisis / Contingencia",text:"Actúa como consultor senior en gestión de crisis. Identifica: origen y detonador de la crisis, velocidad de propagación, actores principales, narrativas dominantes. Evalúa el nivel de daño reputacional, efectividad de la respuesta institucional. Prioriza acciones inmediatas de contención y estrategia de recuperación."},
+  {label:"Industria / Sector",text:"Actúa como analista senior de inteligencia sectorial. Evalúa las tendencias del sector: actores principales, regulaciones, competitividad, innovación y disrupciones. Analiza la percepción pública del sector, identifica riesgos regulatorios y reputacionales compartidos. Compara el posicionamiento de las empresas mencionadas dentro del ecosistema sectorial y detecta oportunidades de diferenciación."}
+];
 const AI_LENGTHS={resumen:"3-4 párrafos",sentimiento:"2-3 párrafos",temas:"3-5 insights",conclusiones:"2-3 párrafos",recomendaciones:"4-5 recomendaciones",picos:"2-3 párrafos",tendSent:"2-3 párrafos"};
 export default function Home(){
   const[view,setView]=useState("home");
@@ -543,7 +552,7 @@ FORMATO: JSON válido sin markdown ni backticks. NO uses saltos de línea dentro
       /* Build a mega-prompt with all subjects */
       let megaPrompt="Eres un analista senior de monitoreo de medios.\nGenera un análisis COMPLETO para CADA sujeto listado abajo.\n\n";
       megaPrompt+="RESPONDE EXCLUSIVAMENTE con un JSON válido. La estructura es:\n{\n";
-      megaPrompt+=subjects.map(s=>'  "'+s.name+'": { "resumen":"...", "temas":"[array JSON]", "picos":"...", "sentimiento":"...", "tendSent":"...", "fuentes":"...", "hora":"...", "conclusiones":"...", "recomendaciones":"..." }').join(",\n");
+      megaPrompt+=subjects.map(s=>'  "'+s.name+'": { "resumen":"...", "temas":"[array JSON]", "picos":"...", "sentimiento":"...", "tendSent":"...", "fuentes":"...", "hora":"...", "tier":"...", "top5med":"...", "tipoNota":"...", "estado":"...", "topPub":"...", "conclusiones":"...", "recomendaciones":"..." }').join(",\n");
       megaPrompt+="\n}\n\n";
       megaPrompt+="REGLAS:\n- Cada sección usa \" || \" para separar párrafos\n- Nombres de medios/usuarios con ***nombre***\n- Citas con [Ver fuente](URL)\n- NUNCA cuestionar la clasificación de sentimiento\n- Cada sujeto tiene su análisis INDEPENDIENTE\n\n";
 
@@ -558,6 +567,11 @@ FORMATO: JSON válido sin markdown ni backticks. NO uses saltos de línea dentro
         megaPrompt+="TIPO: "+(d.dataType==="social"?"Redes Sociales":d.dataType==="media"?"Medios Tradicionales":"Redes + Medios")+"\n";
         megaPrompt+="MENCIONES: "+d.totalMenciones+" | ALCANCE: "+d.totalAlcance+" | SENT.NETO: "+d.sentNeto.toFixed(1)+"%\n";
         megaPrompt+="POSITIVO: "+d.sentCounts.Positivo+" | NEGATIVO: "+d.sentCounts.Negativo+" | NEUTRO: "+d.sentCounts.Neutro+"\n";
+        if(d.fuenteData)megaPrompt+="FUENTES: "+d.fuenteData.map(f=>f.fuente+"("+f.total+")").join(", ")+"\n";
+        if(d.hourData){const mx=d.hourData.reduce((m,x)=>x.total>m.total?x:m,{hora:0,total:0});megaPrompt+="HORA PICO: "+mx.hora+"h con "+mx.total+" publicaciones\n";}
+        if(d.tierData&&d.tierData.length>0)megaPrompt+="TIER: "+d.tierData.map(t=>t.name+"("+t.value+")").join(", ")+"\n";
+        if(d.tipoNotaData&&d.tipoNotaData.length>0)megaPrompt+="TIPO NOTA: "+d.tipoNotaData.map(t=>t.name+"("+t.value+")").join(", ")+"\n";
+        if(d.estadoData&&d.estadoData.length>0)megaPrompt+="ESTADOS: "+d.estadoData.slice(0,5).map(t=>t.name+"("+t.value+")").join(", ")+"\n";
         /* Top mentions */
         const topP=d.topPositivas.slice(0,3).map(r=>r.autor+": "+r.contenido.substring(0,100)+" ["+r.link+"]").join("\n");
         const topN=d.topNegativas.slice(0,3).map(r=>r.autor+": "+r.contenido.substring(0,100)+" ["+r.link+"]").join("\n");
@@ -581,7 +595,7 @@ FORMATO: JSON válido sin markdown ni backticks. NO uses saltos de línea dentro
         const subData=parsed[sub.name];
         if(!subData)continue;
         const aiTexts:Record<string,string>={};
-        const keys=["resumen","picos","sentimiento","tendSent","fuentes","hora","conclusiones","recomendaciones"];
+        const keys=["resumen","picos","sentimiento","tendSent","fuentes","hora","conclusiones","recomendaciones","tier","top5med","tipoNota","estado","topPub","picosRedes","picosMedios"];
         keys.forEach(k=>{if(subData[k]){const v=subData[k];aiTexts[k]=typeof v==="string"?v:Array.isArray(v)?v.map(String).join(" || "):JSON.stringify(v)}});
         if(subData.temas)aiTexts.temas=typeof subData.temas==="string"?subData.temas:JSON.stringify(subData.temas);
         updateSubject(sub.id,{aiTexts});
@@ -606,7 +620,6 @@ FORMATO: JSON válido sin markdown ni backticks. NO uses saltos de línea dentro
       const fileSaver=await import("file-saver");
       const saveAs=fileSaver.saveAs||fileSaver.default;
       const el=reportContainerRef.current;
-      const hex6=(c:string)=>{const h=c.replace("#","").replace(/[^0-9a-fA-F]/g,"");return h.length>=6?h.substring(0,6):h.padEnd(6,"0")};
       const acHex=hex6(brand.accentColor||"0f3460");
       const prHex=hex6(brand.primaryColor||"1a1a2e");
 
@@ -1073,12 +1086,7 @@ FORMATO: JSON válido sin markdown ni backticks. NO uses saltos de línea dentro
             <div className="mb-3"><label className="text-[11px] text-gray-500 font-medium block mb-1">Sujeto de análisis</label><input value={promptConfig.subject} onChange={e=>setPromptConfig(p=>({...p,subject:e.target.value}))} placeholder="Ej: Tim Burton, Coca-Cola, AMLO, Juegos Olímpicos..." className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm outline-none focus:border-purple-400"/></div>
             <div className="grid grid-cols-2 gap-3 mb-3"><div><label className="text-[11px] text-gray-500 font-medium block mb-1">Enfoque</label><select value={promptConfig.focus} onChange={e=>setPromptConfig(p=>({...p,focus:e.target.value}))} className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm outline-none">{["marca","persona","gobierno","institución","evento","lugar","producto","otro"].map(o=><option key={o} value={o}>{o.charAt(0).toUpperCase()+o.slice(1)}</option>)}</select></div><div><label className="text-[11px] text-gray-500 font-medium block mb-1">Tono</label><select value={promptConfig.tone} onChange={e=>setPromptConfig(p=>({...p,tone:e.target.value}))} className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm outline-none">{["profesional","ejecutivo","periodístico","académico","casual"].map(o=><option key={o} value={o}>{o.charAt(0).toUpperCase()+o.slice(1)}</option>)}</select></div></div>
             <div className="mb-3"><label className="text-[11px] text-gray-500 font-medium block mb-1">Instrucciones adicionales (opcional)</label><textarea value={promptConfig.instructions} onChange={e=>setPromptConfig(p=>({...p,instructions:e.target.value}))} placeholder="Escribe instrucciones específicas o selecciona un ejemplo abajo..." className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm outline-none focus:border-purple-400 resize-none" rows={3}/><div className="mt-2"><div className="text-[10px] text-gray-400 font-semibold mb-1.5">Ejemplos de prompts (click para usar):</div><div className="grid gap-1.5">{[
-              {label:"Marca / Producto",text:"Actúa como analista senior de reputación corporativa. Evalúa la percepción de marca: posicionamiento vs competidores, drivers de preferencia, vulnerabilidades reputacionales. Identifica oportunidades de amplificación y riesgos de crisis. Analiza el sentimiento por atributo de marca (calidad, precio, servicio, innovación)."},
-              {label:"Persona pública / Político",text:"Actúa como consultor senior en comunicación política y opinión pública. Analiza el posicionamiento del personaje: narrativas a favor y en contra, temas que generan polarización, actores que amplifican o contrarrestan. Evalúa capital político y vulnerabilidades. Identifica oportunidades de posicionamiento estratégico."},
-              {label:"Gobierno / Institución",text:"Actúa como analista senior en comunicación gubernamental. Evalúa la percepción ciudadana: políticas públicas más comentadas, nivel de aprobación implícito en la conversación, temas de crisis, voceros efectivos e inefectivos. Identifica narrativas de oposición y oportunidades de comunicación proactiva."},
-              {label:"Evento / Experiencia",text:"Actúa como analista senior en entretenimiento y experiencias. Analiza la percepción del público: expectativas vs realidad, viralidad del contenido generado por asistentes, comparación con eventos similares. Evalúa drivers de satisfacción e insatisfacción (precio, accesibilidad, experiencia). Identifica influencers clave."},
-              {label:"Crisis / Contingencia",text:"Actúa como consultor senior en gestión de crisis. Identifica: origen y detonador de la crisis, velocidad de propagación, actores principales, narrativas dominantes. Evalúa el nivel de daño reputacional, efectividad de la respuesta institucional. Prioriza acciones inmediatas de contención y estrategia de recuperación."},
-              {label:"Industria / Sector",text:"Actúa como analista senior de inteligencia sectorial. Evalúa las tendencias del sector: actores principales, regulaciones, competitividad, innovación y disrupciones. Analiza la percepción pública del sector, identifica riesgos regulatorios y reputacionales compartidos. Compara el posicionamiento de las empresas mencionadas dentro del ecosistema sectorial y detecta oportunidades de diferenciación."}
+              ...PROMPT_TEMPLATES
             ].map((ex,ei)=>(<button key={ei} onClick={()=>setPromptConfig(p=>({...p,instructions:ex.text}))} className="text-left px-2.5 py-1.5 rounded-lg border border-gray-100 text-[10px] text-gray-500 bg-gray-50/50 hover:bg-purple-50 hover:border-purple-200 cursor-pointer transition-all" style={{borderStyle:"solid"}}><span className="font-bold text-gray-700">{ex.label}:</span> {ex.text.substring(0,80)}...</button>))}</div></div></div>
             <div><label className="text-[11px] text-gray-500 font-medium block mb-1">Alcance de datos para IA</label><select value={promptConfig.dataScope} onChange={e=>setPromptConfig(p=>({...p,dataScope:e.target.value}))} className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm outline-none"><option value="top50">Top 50 menciones (rápido, menor costo)</option><option value="top100">Top 100 menciones (balance)</option><option value="all">Toda la información (más profundo, mayor costo)</option></select><p className="text-[10px] text-gray-400 mt-1">A mayor alcance, el análisis es más profundo pero consume más tokens.</p></div>
           </div>
@@ -1218,6 +1226,7 @@ FORMATO: JSON válido sin markdown ni backticks. NO uses saltos de línea dentro
                 </select>
               </div>
               <textarea value={sub.instructions} onChange={e=>updateSubject(sub.id,{instructions:e.target.value})} placeholder="Instrucciones adicionales para la IA (opcional)" rows={2} className="px-3.5 py-2.5 rounded-lg border border-gray-200 text-sm outline-none focus:border-blue-400 resize-y"/>
+              <div className="flex gap-1.5 flex-wrap">{PROMPT_TEMPLATES.map(pt=>(<button key={pt.label} onClick={()=>updateSubject(sub.id,{focus:pt.label,instructions:pt.text})} className="px-2.5 py-1 rounded-lg text-[10px] border cursor-pointer transition-all" style={{background:sub.focus===pt.label?"#8b5cf6":"white",color:sub.focus===pt.label?"white":"#64748b",borderColor:sub.focus===pt.label?"#8b5cf6":"#e2e8f0"}}>{pt.label}</button>))}</div>
 
               {/* File upload */}
               <div className="flex items-center gap-3">
@@ -1225,10 +1234,25 @@ FORMATO: JSON válido sin markdown ni backticks. NO uses saltos de línea dentro
                 <button onClick={()=>document.getElementById("multi-file-"+sub.id)?.click()} className="px-4 py-2 rounded-lg text-xs font-semibold text-white border-none cursor-pointer" style={{background:"linear-gradient(135deg,#3b82f6,#2563eb)"}}>
                   <span className="flex items-center gap-1.5"><FileSpreadsheet size={14}/> {sub.fileName||"Cargar Excel"}</span>
                 </button>
-                {sub.pd&&<div className="flex gap-2 text-[11px]">
-                  {sub.sData.length>0&&<span className="text-green-500">{sub.pd.dataType==="fusionado"?sub.sData.length:sub.pd.totalMenciones} redes</span>}
-                  {sub.mData.length>0&&<span className="text-blue-500">{sub.pd.dataType==="fusionado"?sub.mData.length:sub.pd.totalMenciones} medios</span>}
-                  <span className="text-gray-400">({sub.pd.dataType})</span>
+                {sub.pd&&<div className="flex items-center gap-3">
+                  <div className="flex gap-2 text-[11px]">
+                    {sub.sData.length>0&&<span className="text-green-500">{sub.sData.length} redes</span>}
+                    {sub.mData.length>0&&<span className="text-blue-500">{sub.mData.length} medios</span>}
+                  </div>
+                  {sub.sData.length>0&&sub.mData.length>0&&<div className="flex bg-gray-100 rounded-md p-0.5">
+                    {(["social","media","fusionado"] as const).map(t=>{
+                      const canShow=t==="social"?sub.sData.length>0:t==="media"?sub.mData.length>0:sub.sData.length>0&&sub.mData.length>0;
+                      if(!canShow)return null;
+                      const label=t==="social"?"Redes":t==="media"?"Medios":"Ambos";
+                      return<button key={t} onClick={()=>{
+                        let newPd:PData|null=null;let newSPd=sub.sPd;let newMPd=sub.mPd;
+                        if(t==="social"){const s=processSocial(sub.sData);newPd=s;newSPd=s}
+                        else if(t==="media"){const m=processMedia(sub.mData);newPd=m;newMPd=m}
+                        else{const s=processSocial(sub.sData);const m=processMedia(sub.mData);newSPd=s;newMPd=m;newPd=processFusionado(s,m)}
+                        updateSubject(sub.id,{tab:t,pd:newPd,sPd:newSPd,mPd:newMPd});
+                      }} className="px-2 py-0.5 rounded text-[10px] font-semibold border-none cursor-pointer" style={{background:sub.tab===t?"white":"transparent",color:sub.tab===t?"#3b82f6":"#94a3b8"}}>{label}</button>
+                    })}
+                  </div>}
                 </div>}
               </div>
             </div>
@@ -1257,54 +1281,232 @@ FORMATO: JSON válido sin markdown ni backticks. NO uses saltos de línea dentro
         </div>)}
 
         {/* ══════ MULTI-SUBJECT PREVIEW ══════ */}
-        {view==="multi"&&multiGenerated&&(<div className="flex-1 overflow-y-auto bg-gray-50 p-7">
-          <div className="flex items-center gap-3 mb-5">
+        {view==="multi"&&multiGenerated&&(<div className="flex-1 overflow-y-auto" style={{background:"#f8f9fb"}}>
+          <div className="sticky top-0 z-10 bg-white border-b border-gray-100 px-7 py-3 flex items-center gap-4">
             <button onClick={()=>setMultiGenerated(false)} className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-white border border-gray-200 cursor-pointer hover:bg-gray-50">← Configurar</button>
             <span className="text-lg font-bold text-gray-800">{multiTitle}</span>
             {multiPeriod&&<span className="text-xs text-gray-400">{multiPeriod}</span>}
+            <span className="text-xs text-gray-400">{subjects.filter(s=>s.pd).length} sujetos</span>
+            <div className="flex-1"/>
+            <button onClick={async()=>{
+              /* Export ALL subjects to single Word doc */
+              setExportLoading("word");
+              try{
+                const html2canvas=(await import("html2canvas")).default;
+                const D=await import("docx");
+                const{Document:DocxDoc,Packer,Paragraph,TextRun,ImageRun,AlignmentType,PageBreak,
+                  ExternalHyperlink,PageOrientation}=D;
+                const fileSaver=await import("file-saver");
+                const saveAs=fileSaver.saveAs||fileSaver.default;
+                const acHex=hex6(brand.accentColor||"000000");const prHex=hex6(brand.primaryColor||"1a1a2e");
+                const ch:unknown[]=[];
+                const mkRuns=(text:string)=>{
+                  if(!text)return[new TextRun({text:"",size:24,font:"Arial"})];
+                  const parts=(typeof text==="string"?text:String(text)).split(/(\*\*\*[^*]+\*\*\*|\*\*[^*]+\*\*|\[Ver fuente\]\([^)]+\))/g);
+                  const runs:(InstanceType<typeof TextRun>|InstanceType<typeof ExternalHyperlink>)[]=[];
+                  for(const p of parts){if(!p)continue;const bi=p.match(/^\*\*\*(.+)\*\*\*$/);if(bi){runs.push(new TextRun({text:bi[1],bold:brand.accentBold,italics:true,size:24,font:"Arial",color:acHex}));continue}const bo=p.match(/^\*\*(.+)\*\*$/);if(bo){runs.push(new TextRun({text:bo[1],bold:true,size:24,font:"Arial"}));continue}const lk=p.match(/\[Ver fuente\]\(([^)]+)\)/);if(lk){runs.push(new ExternalHyperlink({children:[new TextRun({text:" Ver fuente ",style:"Hyperlink",size:20,font:"Arial"})],link:lk[1]}));continue}runs.push(new TextRun({text:p,size:24,font:"Arial"}))}
+                  return runs;
+                };
+                const hd=(text:string)=>new Paragraph({spacing:{before:200,after:80},children:[new TextRun({text,bold:true,size:32,font:"Arial",color:prHex})]});
+                const aiP=(text:string|undefined)=>{if(!text)return[];return(typeof text==="string"?text:String(text)).split(/\s*\|\|\s*/).filter(Boolean).map(p=>new Paragraph({spacing:{after:80},alignment:AlignmentType.JUSTIFIED,children:mkRuns(p)}))};
+                const bl=()=>new Paragraph({spacing:{after:80},children:[new TextRun({text:"",size:24})]});
+                for(const sub of subjects.filter(s=>s.pd)){
+                  const spd=sub.pd!;const at=sub.aiTexts;
+                  /* Subject banner as image */
+                  const bannerEl=document.querySelector("[data-multi-banner=\""+sub.id+"\"]") as HTMLElement|null;
+                  if(bannerEl){
+                    const saved2:Map<Element,{ov:string;cls:string}>=new Map();
+                    const fix2=(el:Element)=>{const h=el as HTMLElement;if(!h.style||!h.className||typeof h.className!=="string")return;if(h.className.includes("overflow-hidden")||h.className.includes("overflow-x-auto")){saved2.set(el,{ov:h.style.overflow,cls:h.className});h.className=h.className.replace(/overflow-hidden|overflow-x-auto/g,"overflow-visible");h.style.overflow="visible"}};
+                    fix2(bannerEl);bannerEl.querySelectorAll("*").forEach(fix2);let pp=bannerEl.parentElement;while(pp&&pp!==document.body){fix2(pp);pp=pp.parentElement}
+                    const cvB=await html2canvas(bannerEl,{scale:2,useCORS:true,logging:false,windowWidth:2000,scrollX:0,scrollY:-window.scrollY,backgroundColor:"#ffffff"});
+                    saved2.forEach((orig,el)=>{(el as HTMLElement).style.overflow=orig.ov;(el as HTMLElement).className=orig.cls});
+                    const duB=cvB.toDataURL("image/png");const binB=atob(duB.split(",")[1]);const arrB=new Uint8Array(binB.length);for(let j=0;j<binB.length;j++)arrB[j]=binB.charCodeAt(j);
+                    const ratio=cvB.height/cvB.width;const bW=640;const bH=Math.round(bW*ratio);
+                    if(ch.length>0)ch.push(new Paragraph({children:[new PageBreak()]}));
+                    ch.push(new Paragraph({spacing:{before:1200},children:[new TextRun("")]}));
+                    ch.push(new Paragraph({alignment:AlignmentType.CENTER,children:[new ImageRun({data:arrB,transformation:{width:bW,height:bH},type:"png"})]}));
+                    ch.push(bl());
+                  }
+                  /* KPIs as image */
+                  const kpiEl=document.querySelector("[data-multi-kpi=\""+sub.id+"\"]") as HTMLElement|null;
+                  if(kpiEl){
+                    const saved3:Map<Element,{ov:string;cls:string}>=new Map();
+                    const fix3=(el:Element)=>{const h=el as HTMLElement;if(!h.style||!h.className||typeof h.className!=="string")return;if(h.className.includes("overflow-hidden")){saved3.set(el,{ov:h.style.overflow,cls:h.className});h.className=h.className.replace(/overflow-hidden/g,"overflow-visible");h.style.overflow="visible"}};
+                    fix3(kpiEl);kpiEl.querySelectorAll("*").forEach(fix3);let pp2=kpiEl.parentElement;while(pp2&&pp2!==document.body){fix3(pp2);pp2=pp2.parentElement}
+                    const cvK=await html2canvas(kpiEl,{scale:2,useCORS:true,logging:false,windowWidth:2000,scrollX:0,scrollY:-window.scrollY,backgroundColor:"#ffffff"});
+                    saved3.forEach((orig,el)=>{(el as HTMLElement).style.overflow=orig.ov;(el as HTMLElement).className=orig.cls});
+                    const duK=cvK.toDataURL("image/png");const binK=atob(duK.split(",")[1]);const arrK=new Uint8Array(binK.length);for(let j=0;j<binK.length;j++)arrK[j]=binK.charCodeAt(j);
+                    const ratioK=cvK.height/cvK.width;const kW=680;const kH=Math.round(kW*ratioK);
+                    ch.push(hd("Indicadores Clave"));
+                    ch.push(new Paragraph({alignment:AlignmentType.CENTER,spacing:{after:100},children:[new ImageRun({data:arrK,transformation:{width:kW,height:kH},type:"png"})]}));
+                    ch.push(bl());
+                  }
+                  /* Charts as images */
+                  const chartEls=document.querySelectorAll("[data-multi-chart=\""+sub.id+"\"]");
+                  for(const ce of Array.from(chartEls)){
+                    const chartEl=ce as HTMLElement;const title=chartEl.getAttribute("data-chart-title")||"";
+                    const saved4:Map<Element,{ov:string;cls:string}>=new Map();
+                    const fix4=(el:Element)=>{const h=el as HTMLElement;if(!h.style||!h.className||typeof h.className!=="string")return;if(h.className.includes("overflow-hidden")||h.className.includes("overflow-x-auto")){saved4.set(el,{ov:h.style.overflow,cls:h.className});h.className=h.className.replace(/overflow-hidden|overflow-x-auto/g,"overflow-visible");h.style.overflow="visible"}};
+                    fix4(chartEl);chartEl.querySelectorAll("*").forEach(fix4);let pp3=chartEl.parentElement;while(pp3&&pp3!==document.body){fix4(pp3);pp3=pp3.parentElement}
+                    const cvC=await html2canvas(chartEl,{scale:2,useCORS:true,logging:false,windowWidth:2000,scrollX:0,scrollY:-window.scrollY,backgroundColor:"#ffffff"});
+                    saved4.forEach((orig,el)=>{(el as HTMLElement).style.overflow=orig.ov;(el as HTMLElement).className=orig.cls});
+                    const duC=cvC.toDataURL("image/png");const binC=atob(duC.split(",")[1]);const arrC=new Uint8Array(binC.length);for(let j=0;j<binC.length;j++)arrC[j]=binC.charCodeAt(j);
+                    const ratioC=cvC.height/cvC.width;const cW2=680;const cH=Math.round(cW2*ratioC);
+                    if(title)ch.push(hd(title));
+                    ch.push(new Paragraph({alignment:AlignmentType.CENTER,spacing:{after:100},children:[new ImageRun({data:arrC,transformation:{width:cW2,height:cH},type:"png"})]}));
+                    /* AI text for this chart */
+                    const aiKey=chartEl.getAttribute("data-ai-key")||"";
+                    if(aiKey&&at[aiKey])ch.push(...aiP(at[aiKey]));
+                    ch.push(bl());
+                  }
+                  /* Text sections */
+                  const textSecs=[{t:"Resumen Ejecutivo",k:"resumen"},{t:"Conclusiones",k:"conclusiones"},{t:"Recomendaciones Estratégicas",k:"recomendaciones"}];
+                  for(const ts of textSecs){if(at[ts.k]){ch.push(hd(ts.t));ch.push(...aiP(at[ts.k]));ch.push(bl())}}
+                  /* Temas */
+                  const temas=aiTemas(spd,at);
+                  if(temas.length>0){ch.push(hd("Temas Clave Destacados"));
+                    for(let ti=0;ti<temas.length;ti++){ch.push(new Paragraph({spacing:{before:120,after:40},children:[new TextRun({text:(ti+1)+". "+temas[ti].tema,bold:true,size:24,font:"Arial"})]}));ch.push(new Paragraph({spacing:{after:80},alignment:AlignmentType.JUSTIFIED,children:mkRuns(temas[ti].detalle)}));}
+                    ch.push(bl());
+                  }
+                }
+                ch.push(new Paragraph({spacing:{before:200},alignment:AlignmentType.CENTER,children:[new TextRun({text:"Generado por ReporteaJDOR",size:16,font:"Arial",color:"94a3b8"})]}));
+                const doc=new DocxDoc({styles:{default:{document:{run:{font:"Arial",size:24},paragraph:{spacing:{line:240},alignment:AlignmentType.JUSTIFIED}}}},sections:[{properties:{page:{size:{width:15840,height:12240,orientation:PageOrientation.LANDSCAPE},margin:{top:720,right:900,bottom:720,left:900}}},children:ch as InstanceType<typeof Paragraph>[]}]});
+                const buf=await Packer.toBlob(doc);saveAs(buf,(multiTitle||"multi-reporte")+".docx");
+              }catch(e){console.error(e);alert("Error: "+String(e))}
+              setExportLoading("");
+            }} className="flex items-center gap-1.5 px-4 py-1.5 border-none rounded-lg cursor-pointer text-xs font-semibold text-white" style={{background:"linear-gradient(135deg,#3b82f6,#2563eb)"}}>{exportLoading?<><RefreshCw size={12} className="animate-spin"/> Exportando...</>:<><Download size={12}/> Exportar Word</>}</button>
           </div>
-          <div ref={multiReportRef} className="space-y-10">
+          <div ref={multiReportRef} id="multi-report-target" className="max-w-[940px] mx-auto p-7 pb-20 space-y-8">
             {subjects.filter(s=>s.pd).map((sub)=>{
-              const spd=sub.pd!;const aiT=(k:string,fb:string)=>{const v=sub.aiTexts[k];return v?(typeof v==="string"?v:String(v)):fb};
-              const temas=aiTemas(spd,sub.aiTexts);
-              return(<div key={sub.id} className="bg-white rounded-2xl overflow-hidden shadow-sm border border-gray-100">
-                {/* Per-subject banner */}
-                <div className="p-8 text-center" style={{background:"linear-gradient(135deg,"+brand.bannerPrimary+","+brand.bannerSecondary+")"}}>
+              const spd=sub.pd!;const sat=sub.aiTexts;
+              const sAiT=(k:string,fb:string)=>{const v=sat[k];return v?(typeof v==="string"?v:String(v)):fb};
+              const sTemas=aiTemas(spd,sat);
+              const sHasAlc=spd.totalAlcance>0;const sHasCost=spd.totalCosto>0;
+              const sCostLabel=spd.dataType==="social"?"AVE":"Costo";
+              return(<div key={sub.id} className="space-y-5">
+                {/* Banner */}
+                <div data-multi-banner={sub.id} className="rounded-2xl p-8 text-center" style={{background:"linear-gradient(135deg,"+brand.bannerPrimary+","+brand.bannerSecondary+")"}}>
                   <div className="text-[10px] tracking-widest mb-1" style={{color:brand.titleTextColor+"80"}}>{multiTitle}</div>
                   <div className="text-2xl font-extrabold mb-1" style={{color:brand.titleTextColor,fontFamily:brand.titleFont}}>{sub.name}</div>
                   {multiPeriod&&<div className="text-sm" style={{color:brand.titleTextColor+"80"}}>{"Periodo: "+multiPeriod}</div>}
-                  <div className="mt-2"><span className="px-3 py-1 rounded-full text-[10px] font-semibold bg-white/10" style={{color:brand.titleTextColor+"99"}}>{spd.dataType==="social"?"Redes Sociales":spd.dataType==="media"?"Medios":spd.dataType==="fusionado"?"Medios + Redes":""} — {spd.totalMenciones} menciones</span></div>
+                  <div className="mt-2"><span className="px-3 py-1 rounded-full text-[10px] font-semibold bg-white/10" style={{color:brand.titleTextColor+"99"}}>{spd.dataType==="social"?"Redes Sociales":spd.dataType==="media"?"Medios":"Medios + Redes"} — {spd.totalMenciones} menciones</span></div>
                 </div>
                 {/* KPIs */}
-                <div className="p-6">
-                  <div className="text-base font-bold mb-4" style={{color:brand.primaryColor}}>Indicadores Clave</div>
-                  <div className="flex gap-3 flex-wrap mb-6">
-                    <KPI title="Menciones" value={spd.totalMenciones} icon={<MessageSquare size={14} color="#3b82f6"/>} color="#3b82f6" brand={brand}/>
-                    <KPI title="Alcance" value={fmt(spd.totalAlcance)} icon={<TrendingUp size={14} color="#8b5cf6"/>} color="#8b5cf6" brand={brand}/>
-                    {spd.totalInteracciones>0&&<KPI title="Interacciones" value={fmt(spd.totalInteracciones)} icon={<Globe size={14} color="#10b981"/>} color="#10b981" brand={brand}/>}
-                    {spd.totalCosto>0&&<KPI title="Costo/AVE" value={fmtM(spd.totalCosto)} icon={<DollarSign size={14} color="#f59e0b"/>} color="#f59e0b" brand={brand}/>}
-                    <KPI title="Sent. Neto" value={spd.sentNeto.toFixed(1)+"%"} icon={<BarChart3 size={14} color={spd.sentNeto>=0?"#10b981":"#ef4444"}/>} color={spd.sentNeto>=0?"#10b981":"#ef4444"} brand={brand}/>
+                <Sec title="Indicadores Clave" icon={<BarChart3 size={18} color={brand.accentColor}/>} brand={brand}>
+                  <div data-multi-kpi={sub.id}>
+                    <div className="flex gap-3 flex-wrap mb-4">
+                      <KPI title="Menciones" value={spd.totalMenciones} icon={<MessageSquare size={14} color="#3b82f6"/>} color="#3b82f6" brand={brand}/>
+                      <KPI title="Alcance" value={fmt(spd.totalAlcance)} icon={<TrendingUp size={14} color="#8b5cf6"/>} color="#8b5cf6" brand={brand}/>
+                      {spd.totalInteracciones>0&&<KPI title="Interacciones" value={fmt(spd.totalInteracciones)} icon={<Globe size={14} color="#10b981"/>} color="#10b981" brand={brand}/>}
+                      {sHasCost&&<KPI title={sCostLabel} value={fmtM(spd.totalCosto)} icon={<DollarSign size={14} color="#f59e0b"/>} color="#f59e0b" brand={brand}/>}
+                      <KPI title="Sent. Neto" value={spd.sentNeto.toFixed(1)+"%"} icon={<BarChart3 size={14} color={spd.sentNeto>=0?"#10b981":"#ef4444"}/>} color={spd.sentNeto>=0?"#10b981":"#ef4444"} brand={brand}/>
+                    </div>
                   </div>
-                  {/* Resumen */}
-                  <div className="text-base font-bold mb-3" style={{color:brand.primaryColor}}>Resumen Ejecutivo</div>
-                  <AIBlock text={aiT("resumen",aiResumen(spd))} brand={brand} loading={false}/>
-                  {/* Temas */}
-                  {temas.length>0&&(<><div className="text-base font-bold mt-6 mb-3" style={{color:brand.primaryColor}}>Temas Clave</div>
-                    <div className="grid gap-3">{temas.map((t,ti)=>(<div key={ti} className="p-4 bg-gray-50 rounded-xl border border-gray-100">
-                      <div className="flex items-center gap-2 mb-2"><div className="w-6 h-6 rounded-full flex items-center justify-center text-[11px] font-bold text-white" style={{background:brand.chartColors[ti]}}>{ti+1}</div><span className="text-sm font-bold text-gray-800">{t.tema}</span></div>
-                      <p className="text-xs text-gray-600 leading-relaxed">{t.detalle}</p>
-                    </div>))}</div></>)}
-                  {/* Sentimiento */}
-                  <div className="text-base font-bold mt-6 mb-3" style={{color:brand.primaryColor}}>Análisis de Sentimiento</div>
-                  <div className="flex justify-center mb-4"><Donut data={spd.sentCounts} brand={brand} title="General"/></div>
-                  <AIBlock text={aiT("sentimiento",aiSent(spd))} brand={brand} loading={false}/>
-                  {/* Conclusiones */}
-                  <div className="text-base font-bold mt-6 mb-3" style={{color:brand.primaryColor}}>Conclusiones</div>
-                  <AIBlock text={aiT("conclusiones",aiConc(spd))} brand={brand} loading={false}/>
-                  {/* Recomendaciones */}
-                  <div className="text-base font-bold mt-6 mb-3" style={{color:brand.primaryColor}}>Recomendaciones Estratégicas</div>
-                  <AIBlock text={aiT("recomendaciones",aiRec(spd))} brand={brand} loading={false}/>
-                </div>
+                </Sec>
+                {/* Distribution chart */}
+                <Sec title="Distribución por Fuente" icon={<Globe size={18} color={brand.accentColor}/>} brand={brand}>
+                  <div data-multi-chart={sub.id} data-chart-title="Distribución por Fuente" data-ai-key="fuentes">
+                    <ResponsiveContainer width="100%" height={280}><BarChart data={spd.fuenteData} margin={{top:20,right:20,left:0,bottom:0}}><CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0"/><XAxis dataKey="fuente" tick={{fontSize:12,fill:"#64748b"}}/><YAxis tick={{fontSize:11,fill:"#94a3b8"}}/><Tooltip/><Bar dataKey="total" radius={[6,6,0,0]} name="Total" label={{position:"top",fill:"#64748b",fontSize:12,fontWeight:700}}>{spd.fuenteData.map((e,i)=><Cell key={i} fill={srcC[e.fuente]||brand.mediaColors[e.fuente]||brand.chartColors[i%7]}/>)}</Bar></BarChart></ResponsiveContainer>
+                  </div>
+                  <div className="mt-4"><AIBlock text={sAiT("fuentes",aiFuentes(spd))} brand={brand} loading={false}/></div>
+                </Sec>
+                {/* Resumen */}
+                <Sec title="Resumen Ejecutivo" icon={<FileText size={18} color={brand.accentColor}/>} brand={brand}>
+                  <AIBlock text={sAiT("resumen",aiResumen(spd))} brand={brand} loading={false}/>
+                </Sec>
+                {/* Temas */}
+                {sTemas.length>0&&<Sec title="Temas Clave Destacados" icon={<Lightbulb size={18} color={brand.accentColor}/>} brand={brand}>
+                  <div className="grid gap-3">{sTemas.map((t,ti)=>(<div key={ti} className="p-4 bg-gray-50 rounded-xl border border-gray-100"><div className="flex items-center gap-2 mb-2"><div className="w-6 h-6 rounded-full flex items-center justify-center text-[11px] font-bold text-white" style={{background:brand.chartColors[ti]}}>{ti+1}</div><span className="text-sm font-bold text-gray-800">{t.tema}</span></div><p className="text-xs text-gray-600 leading-relaxed">{t.detalle}</p></div>))}</div>
+                </Sec>}
+                {/* Trend chart */}
+                <Sec title="Tendencia de Conversación" icon={<TrendingUp size={18} color={brand.accentColor}/>} brand={brand}>
+                  <div data-multi-chart={sub.id} data-chart-title="Tendencia de Conversación" data-ai-key="picos">
+                    <ResponsiveContainer width="100%" height={220}><LineChart data={spd.trendData}><CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0"/><XAxis dataKey="date" tick={{fontSize:11,fill:"#94a3b8"}} tickFormatter={(v:string)=>v.substring(5)}/><YAxis tick={{fontSize:11,fill:"#94a3b8"}} allowDecimals={false}/><Tooltip/><Line type="monotone" dataKey="total" stroke={brand.chartColors[0]} strokeWidth={3} dot={{fill:brand.chartColors[0],r:4}} name="Total"/></LineChart></ResponsiveContainer>
+                  </div>
+                  <div className="mt-4"><AIBlock text={sAiT("picos",aiPicos(spd))} brand={brand} loading={false}/></div>
+                </Sec>
+                {/* Sentiment KPIs */}
+                <Sec title="Indicadores de Sentimiento" icon={<BarChart3 size={18} color={brand.accentColor}/>} brand={brand}>
+                  <div data-multi-chart={sub.id} data-chart-title="Indicadores de Sentimiento" data-ai-key="">
+                    <div className="flex gap-3 flex-wrap">
+                      <KPI title="Positivas" value={spd.sentCounts.Positivo} icon={<ThumbsUp size={14} color={brand.positiveColor}/>} color={brand.positiveColor} brand={brand}/>
+                      <KPI title="Negativas" value={spd.sentCounts.Negativo} icon={<ThumbsDown size={14} color={brand.negativeColor}/>} color={brand.negativeColor} brand={brand}/>
+                      <KPI title="Neutras" value={spd.sentCounts.Neutro} icon={<Minus size={14} color={brand.neutralColor}/>} color={brand.neutralColor} brand={brand}/>
+                      <KPI title="Sent. Neto" value={spd.sentNeto.toFixed(1)+"%"} icon={<BarChart3 size={14} color={spd.sentNeto>=0?brand.positiveColor:brand.negativeColor}/>} color={spd.sentNeto>=0?brand.positiveColor:brand.negativeColor} brand={brand}/>
+                    </div>
+                  </div>
+                </Sec>
+                {/* Sentiment analysis */}
+                <Sec title="Análisis de Sentimiento" icon={<MessageSquare size={18} color={brand.accentColor}/>} brand={brand}>
+                  <div data-multi-chart={sub.id} data-chart-title="Análisis de Sentimiento" data-ai-key="sentimiento">
+                    <div className="flex justify-center mb-4"><Donut data={spd.sentCounts} brand={brand} title="General"/></div>
+                    <div className="flex gap-3 justify-center mb-4 overflow-x-auto">{spd.fuenteData.map((f,i)=><Donut key={i} data={{Positivo:f.Positivo,Negativo:f.Negativo,Neutro:f.Neutro}} brand={brand} title={f.fuente}/>)}</div>
+                  </div>
+                  <AIBlock text={sAiT("sentimiento",aiSent(spd))} brand={brand} loading={false}/>
+                </Sec>
+                {/* Sentiment trend */}
+                <Sec title="Tendencia del Sentimiento" icon={<TrendingUp size={18} color={brand.accentColor}/>} brand={brand}>
+                  <div data-multi-chart={sub.id} data-chart-title="Tendencia del Sentimiento" data-ai-key="tendSent">
+                    <ResponsiveContainer width="100%" height={260}><LineChart data={spd.trendData}><CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0"/><XAxis dataKey="date" tick={{fontSize:11,fill:"#94a3b8"}} tickFormatter={(v:string)=>v.substring(5)}/><YAxis tick={{fontSize:11,fill:"#94a3b8"}} allowDecimals={false}/><Tooltip/><Legend/><Line type="monotone" dataKey="Positivo" stroke={brand.positiveColor} strokeWidth={2.5} dot={{r:3}}/><Line type="monotone" dataKey="Negativo" stroke={brand.negativeColor} strokeWidth={2.5} dot={{r:3}}/><Line type="monotone" dataKey="Neutro" stroke={brand.neutralColor} strokeWidth={2.5} dot={{r:3}}/></LineChart></ResponsiveContainer>
+                  </div>
+                  <div className="mt-4"><AIBlock text={sAiT("tendSent",aiTendSent(spd))} brand={brand} loading={false}/></div>
+                </Sec>
+                {/* Hora - social/fusionado only */}
+                {(spd.dataType==="social"||spd.dataType==="fusionado")&&spd.hourData&&<Sec title="Actividad por Hora" icon={<Clock size={18} color={brand.accentColor}/>} brand={brand}>
+                  <div data-multi-chart={sub.id} data-chart-title="Actividad por Hora" data-ai-key="hora">
+                    {(()=>{const mx=spd.hourData.reduce((m,x)=>x.total>m.total?x:m,{hora:-1,total:0});return(<ResponsiveContainer width="100%" height={220}><BarChart data={spd.hourData} margin={{top:20,right:20,left:0,bottom:0}}><CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0"/><XAxis dataKey="hora" tick={{fontSize:10,fill:"#64748b"}} tickFormatter={(v:number)=>v+"h"}/><YAxis tick={{fontSize:11,fill:"#94a3b8"}} allowDecimals={false}/><Tooltip/><Bar dataKey="total" radius={[4,4,0,0]} name="Publicaciones" label={{position:"top",fill:"#64748b",fontSize:10,fontWeight:700}}>{spd.hourData.map((h,i)=><Cell key={i} fill={h.hora===mx.hora?"#f59e0b":brand.chartColors[0]}/>)}</Bar></BarChart></ResponsiveContainer>)})()}
+                  </div>
+                  <div className="mt-4"><AIBlock text={sAiT("hora",aiHora(spd))} brand={brand} loading={false}/></div>
+                </Sec>}
+                {/* Menciones Populares por Sentimiento */}
+                <Sec title="Menciones Populares por Sentimiento" icon={<MessageSquare size={18} color={brand.accentColor}/>} brand={brand}>
+                  <div className="grid grid-cols-2 gap-x-5 gap-y-0 mb-3"><div className="flex items-center gap-2 mb-2"><ThumbsUp size={14} color={brand.positiveColor}/><span className="text-sm font-bold" style={{color:brand.positiveColor}}>Top 5 Positivas</span></div><div className="flex items-center gap-2 mb-2"><ThumbsDown size={14} color={brand.negativeColor}/><span className="text-sm font-bold" style={{color:brand.negativeColor}}>Top 5 Negativas</span></div></div>
+                  {Array.from({length:5}).map((_,i)=>(<div key={i} className="grid grid-cols-2 gap-5 mb-2">{spd.topPositivas[i]?<MenCard {...spd.topPositivas[i]} brand={brand} tipo="positivo"/>:<div/>}{spd.topNegativas[i]?<MenCard {...spd.topNegativas[i]} brand={brand} tipo="negativo"/>:<div/>}</div>))}
+                </Sec>
+                {/* Media-only sections */}
+                {(spd.dataType==="media"||spd.dataType==="fusionado")&&spd.tierData&&spd.tierData.length>0&&<Sec title="Distribución de Notas por Tier" icon={<Layers size={18} color={brand.accentColor}/>} brand={brand}>
+                  <div data-multi-chart={sub.id} data-chart-title="Distribución de Notas por Tier" data-ai-key="tier">
+                    <GenChart data={spd.tierData} brand={brand} colors={spd.tierData.map(t=>brand.tierColors[t.name]||"#94a3b8")}/>
+                  </div>
+                  <div className="mt-4"><AIBlock text={sAiT("tier",aiTier(spd))} brand={brand} loading={false}/></div>
+                </Sec>}
+                {(spd.dataType==="media"||spd.dataType==="fusionado")&&spd.top5Medios&&spd.top5Medios.length>0&&<Sec title="Top 5 Medios con Más Noticias" icon={<Trophy size={18} color={brand.accentColor}/>} brand={brand}>
+                  <div data-multi-chart={sub.id} data-chart-title="Top 5 Medios con Más Noticias" data-ai-key="top5med">
+                    <GenChart data={spd.top5Medios.map(m=>({name:m.nombre,value:m.total}))} brand={brand} colors={genPalette(brand.primaryColor,brand.secondaryColor,spd.top5Medios.length)} vertical={false}/>
+                  </div>
+                  <div className="mt-4"><AIBlock text={sAiT("top5med",aiTop5Med(spd))} brand={brand} loading={false}/></div>
+                </Sec>}
+                {(spd.dataType==="media"||spd.dataType==="fusionado")&&spd.tipoNotaData&&spd.tipoNotaData.length>0&&<Sec title="Distribución por Tipo de Nota" icon={<List size={18} color={brand.accentColor}/>} brand={brand}>
+                  <div data-multi-chart={sub.id} data-chart-title="Distribución por Tipo de Nota" data-ai-key="tipoNota">
+                    <GenChart data={spd.tipoNotaData} brand={brand} colors={genPalette(brand.primaryColor,brand.secondaryColor,spd.tipoNotaData.length)}/>
+                  </div>
+                  <div className="mt-4"><AIBlock text={sAiT("tipoNota",aiTipoNota(spd))} brand={brand} loading={false}/></div>
+                </Sec>}
+                {(spd.dataType==="media"||spd.dataType==="fusionado")&&spd.estadoData&&spd.estadoData.length>0&&<Sec title="Distribución por Estado" icon={<MapPin size={18} color={brand.accentColor}/>} brand={brand}>
+                  <div data-multi-chart={sub.id} data-chart-title="Distribución por Estado" data-ai-key="estado">
+                    <GenChart data={spd.estadoData} brand={brand} colors={genPalette(brand.secondaryColor,brand.primaryColor,spd.estadoData.length)}/>
+                  </div>
+                  <div className="mt-4"><AIBlock text={sAiT("estado",aiEstado(spd))} brand={brand} loading={false}/></div>
+                </Sec>}
+                {/* Top 5 */}
+                <Sec title="Top Publicaciones" icon={<Trophy size={18} color={brand.accentColor}/>} brand={brand}>
+                  <AIBlock text={sAiT("topPub",aiTopPub())} brand={brand} loading={false}/>
+                  <div className="mt-4">
+                    {sHasAlc&&sHasCost?(<div className="grid grid-cols-2 gap-4 mb-5"><div><div className="text-xs font-bold text-gray-700 mb-2">Top 5 General por Alcance</div><T5Table items={spd.top5AlcGeneral} label="Alcance" brand={brand} showTitulo/></div><div><div className="text-xs font-bold text-gray-700 mb-2">Top 5 General por {sCostLabel}</div><T5Table items={spd.top5CostGeneral} label={sCostLabel} brand={brand} showTitulo/></div></div>):sHasAlc?(<div className="flex justify-center mb-5"><div className="w-full max-w-lg"><div className="text-xs font-bold text-gray-700 mb-2">Top 5 General por Alcance</div><T5Table items={spd.top5AlcGeneral} label="Alcance" brand={brand} showTitulo/></div></div>):sHasCost?(<div className="flex justify-center mb-5"><div className="w-full max-w-lg"><div className="text-xs font-bold text-gray-700 mb-2">Top 5 General por {sCostLabel}</div><T5Table items={spd.top5CostGeneral} label={sCostLabel} brand={brand} showTitulo/></div></div>):null}
+                    {/* Per-source tables */}
+                    {(spd.dataType==="social"?VS:spd.dataType==="media"?VM:[...VS,...VM]).filter(s=>spd.top5AlcPorFuente[s]?.length>0||spd.top5CostPorFuente[s]?.length>0).map(s=>(<div key={s} className="mb-4"><div className="flex items-center gap-2 mb-2"><div className="w-6 h-6 rounded-lg flex items-center justify-center" style={{background:srcC[s]||brand.mediaColors[s]||brand.chartColors[0]}}>{socIco[s]||medIco[s]||<span className="text-white text-[10px] font-bold">{s.substring(0,2)}</span>}</div><span className="text-sm font-bold text-gray-800">{s}</span></div><div className="grid grid-cols-2 gap-4">{sHasAlc&&spd.top5AlcPorFuente[s]?.length>0&&<div><div className="text-[11px] font-semibold text-gray-500 mb-1">Por Alcance</div><T5Table items={spd.top5AlcPorFuente[s]} label="Alcance" brand={brand} showTitulo/></div>}{sHasCost&&spd.top5CostPorFuente[s]?.length>0&&<div><div className="text-[11px] font-semibold text-gray-500 mb-1">Por {sCostLabel}</div><T5Table items={spd.top5CostPorFuente[s]} label={sCostLabel} brand={brand} showTitulo/></div>}</div></div>))}
+                  </div>
+                </Sec>
+                {/* Conclusiones */}
+                <Sec title="Conclusiones" icon={<FileText size={18} color={brand.accentColor}/>} brand={brand}>
+                  <AIBlock text={sAiT("conclusiones",aiConc(spd))} brand={brand} loading={false}/>
+                </Sec>
+                {/* Recomendaciones */}
+                <Sec title="Recomendaciones Estratégicas" icon={<Lightbulb size={18} color={brand.accentColor}/>} brand={brand}>
+                  <AIBlock text={sAiT("recomendaciones",aiRec(spd))} brand={brand} loading={false}/>
+                </Sec>
+                {/* Separator between subjects */}
+                <div className="border-t-4 border-gray-200 my-8"/>
               </div>);
             })}
           </div>
