@@ -296,6 +296,7 @@ function GenChart({data,brand,colors,vertical}:{data:{name:string;value:number}[
 /* ═══════ SECTION DEFS ═══════ */
 const SOC_SECS=["Indicadores Clave por Red Social","Distribución por Red Social","Resumen Ejecutivo","Temas Clave Destacados","Tendencia de Conversación","Actividad por Hora","Indicadores de Sentimiento","Análisis de Sentimiento","Tendencia del Sentimiento","Menciones Populares por Sentimiento","Top Publicaciones","Conclusiones","Recomendaciones Estratégicas"];
 const MED_SECS=["Indicadores Clave por Tipo de Medio","Distribución por Tipo de Medio","Resumen Ejecutivo","Temas Clave Destacados","Tráfico de Información","Indicadores de Sentimiento","Análisis de Sentimiento","Tendencia del Sentimiento","Menciones Populares por Sentimiento","Distribución de Notas por Tier","Top 5 Medios con Más Noticias","Distribución por Tipo de Nota","Distribución por Estado","Top Publicaciones","Conclusiones","Recomendaciones Estratégicas"];
+const MULTI_SECS=["Indicadores Clave","Distribución por Fuente","Resumen Ejecutivo","Temas Clave Destacados","Tendencia de Conversación","Actividad por Hora","Indicadores de Sentimiento","Análisis de Sentimiento","Tendencia del Sentimiento","Menciones Populares por Sentimiento","Distribución de Notas por Tier","Top 5 Medios con Más Noticias","Distribución por Tipo de Nota","Distribución por Estado","Top Publicaciones","Conclusiones","Recomendaciones Estratégicas"];
 const FUS_SECS=["Indicadores Clave","Distribución por Fuente","Resumen Ejecutivo","Temas Clave Destacados","Tráfico de Información","Tráfico Redes Sociales","Tráfico Medios Tradicionales","Actividad por Hora","Indicadores de Sentimiento","Análisis de Sentimiento","Tendencia del Sentimiento","Menciones Populares por Sentimiento","Distribución de Notas por Tier","Top 5 Medios con Más Noticias","Distribución por Tipo de Nota","Distribución por Estado","Top Publicaciones","Conclusiones","Recomendaciones Estratégicas"];
 
 /* ═══════ MAIN ═══════ */
@@ -521,6 +522,13 @@ FORMATO: JSON válido sin markdown ni backticks. NO uses saltos de línea dentro
   const[multiPeriod,setMultiPeriod]=useState("");
   const[multiAiLoading,setMultiAiLoading]=useState(false);
   const[multiGenerated,setMultiGenerated]=useState(false);
+  const[multiOrder,setMultiOrder]=useState<string[]>(MULTI_SECS);
+  const[multiEnabled,setMultiEnabled]=useState<Record<string,boolean>>(()=>{const m:Record<string,boolean>={};MULTI_SECS.forEach(s=>m[s]=true);return m});
+  const toggleMultiSec=(s:string)=>{setMultiEnabled(p=>({...p,[s]:!p[s]}))};
+  const multiSecNum=(name:string)=>{let n=0;for(const s of multiOrder){if(multiEnabled[s]!==false)n++;if(s===name)return n}return 0};
+  const multiOn=(s:string)=>multiEnabled[s]!==false;
+  const handleMultiDragStart=(i:number)=>{dragRef.current=i};
+  const handleMultiDragOver=(e:React.DragEvent,i:number)=>{e.preventDefault();if(dragRef.current===null||dragRef.current===i)return;const arr=[...multiOrder];const dragged=arr.splice(dragRef.current,1)[0];arr.splice(i,0,dragged);setMultiOrder(arr);dragRef.current=i};
   const multiReportRef=useRef<HTMLDivElement>(null);
 
   const addSubject=()=>{setSubjects(s=>[...s,{id:Date.now().toString(),name:"",focus:"",tone:"profesional y analítico",instructions:"",sData:[],mData:[],pd:null,sPd:null,mPd:null,aiTexts:{},tab:"social",fileName:""}])};
@@ -1288,6 +1296,7 @@ FORMATO: JSON válido sin markdown ni backticks. NO uses saltos de línea dentro
             {multiPeriod&&<span className="text-xs text-gray-400">{multiPeriod}</span>}
             <span className="text-xs text-gray-400">{subjects.filter(s=>s.pd).length} sujetos</span>
             <div className="flex-1"/>
+            <button onClick={()=>setShowChecklist(!showChecklist)} className="flex items-center gap-1.5 px-3 py-1.5 bg-white border border-gray-200 rounded-lg cursor-pointer text-xs text-gray-500 hover:bg-gray-50"><Check size={12}/> Módulos</button>
             {/* Per-subject tab switchers */}
             <div className="flex gap-2">{subjects.filter(s=>s.pd&&s.sData.length>0&&s.mData.length>0).length>0&&<span className="text-[10px] text-gray-400 mr-1">Vista:</span>}
             {subjects.filter(s=>s.pd).map(sub=>(sub.sData.length>0&&sub.mData.length>0?<div key={sub.id} className="flex items-center gap-1 bg-gray-100 rounded-md px-1.5 py-0.5"><span className="text-[9px] text-gray-500 mr-1">{sub.name.substring(0,8)}:</span>{(["social","media","fusionado"] as const).map(t=><button key={t} onClick={()=>{let np:PData|null=null;let ns=sub.sPd;let nm=sub.mPd;if(t==="social"){const s=processSocial(sub.sData);np=s;ns=s}else if(t==="media"){const m=processMedia(sub.mData);np=m;nm=m}else{const s=processSocial(sub.sData);const m=processMedia(sub.mData);ns=s;nm=m;np=processFusionado(s,m)}updateSubject(sub.id,{tab:t,pd:np,sPd:ns,mPd:nm})}} className="px-1.5 py-0.5 rounded text-[9px] font-semibold border-none cursor-pointer" style={{background:sub.tab===t?"white":"transparent",color:sub.tab===t?"#3b82f6":"#94a3b8"}}>{t==="social"?"Redes":t==="media"?"Medios":"Ambos"}</button>)}</div>:null))}</div>
@@ -1313,67 +1322,83 @@ FORMATO: JSON válido sin markdown ni backticks. NO uses saltos de línea dentro
                 const hd=(text:string)=>new Paragraph({spacing:{before:200,after:80},children:[new TextRun({text,bold:true,size:32,font:"Arial",color:prHex})]});
                 const aiP=(text:string|undefined)=>{if(!text)return[];return(typeof text==="string"?text:String(text)).split(/\s*\|\|\s*/).filter(Boolean).map(p=>new Paragraph({spacing:{after:80},alignment:AlignmentType.JUSTIFIED,children:mkRuns(p)}))};
                 const bl=()=>new Paragraph({spacing:{after:80},children:[new TextRun({text:"",size:24})]});
+                /* Capture helper for any element */
+                const capAny=async(el:HTMLElement):Promise<{d:Uint8Array;w:number;h:number}>=>{
+                  const sv:Map<Element,{ov:string;cls:string}>=new Map();
+                  const fx=(e:Element)=>{const h=e as HTMLElement;if(!h.style||!h.className||typeof h.className!=="string")return;if(h.className.includes("overflow-hidden")||h.className.includes("overflow-x-auto")){sv.set(e,{ov:h.style.overflow,cls:h.className});h.className=h.className.replace(/overflow-hidden|overflow-x-auto/g,"overflow-visible");h.style.overflow="visible"}};
+                  fx(el);el.querySelectorAll("*").forEach(fx);let pp=el.parentElement;while(pp&&pp!==document.body){fx(pp);pp=pp.parentElement}
+                  const cv2=await html2canvas(el,{scale:2,useCORS:true,logging:false,windowWidth:2000,scrollX:0,scrollY:-window.scrollY,backgroundColor:"#ffffff"});
+                  sv.forEach((o,e)=>{(e as HTMLElement).style.overflow=o.ov;(e as HTMLElement).className=o.cls});
+                  const du2=cv2.toDataURL("image/png");const bin2=atob(du2.split(",")[1]);const arr2=new Uint8Array(bin2.length);for(let j=0;j<bin2.length;j++)arr2[j]=bin2.charCodeAt(j);
+                  return{d:arr2,w:cv2.width,h:cv2.height};
+                };
+                const imgFromCap=(cap:{d:Uint8Array;w:number;h:number},maxW=680)=>{
+                  const r=cap.h/cap.w;const w2=Math.min(maxW,680);const h2=Math.round(w2*r);
+                  return new Paragraph({alignment:AlignmentType.CENTER,spacing:{after:100},children:[new ImageRun({data:cap.d,transformation:{width:w2,height:h2},type:"png"})]});
+                };
+
                 for(const sub of subjects.filter(s=>s.pd)){
                   const spd=sub.pd!;const at=sub.aiTexts;
-                  /* Subject banner as image */
+                  const getFb=(k:string):string=>{
+                    const fbs:Record<string,()=>string>={"fuentes":()=>aiFuentes(spd),"picos":()=>aiPicos(spd),"hora":()=>aiHora(spd),"sentimiento":()=>aiSent(spd),"tendSent":()=>aiTendSent(spd),"tier":()=>aiTier(spd),"top5med":()=>aiTop5Med(spd),"tipoNota":()=>aiTipoNota(spd),"estado":()=>aiEstado(spd),"topPub":()=>aiTopPub(),"resumen":()=>aiResumen(spd),"conclusiones":()=>aiConc(spd),"recomendaciones":()=>aiRec(spd)};
+                    return at[k]||(fbs[k]?fbs[k]():"");
+                  };
+
+                  /* Banner */
                   const bannerEl=document.querySelector("[data-multi-banner=\""+sub.id+"\"]") as HTMLElement|null;
                   if(bannerEl){
-                    const saved2:Map<Element,{ov:string;cls:string}>=new Map();
-                    const fix2=(el:Element)=>{const h=el as HTMLElement;if(!h.style||!h.className||typeof h.className!=="string")return;if(h.className.includes("overflow-hidden")||h.className.includes("overflow-x-auto")){saved2.set(el,{ov:h.style.overflow,cls:h.className});h.className=h.className.replace(/overflow-hidden|overflow-x-auto/g,"overflow-visible");h.style.overflow="visible"}};
-                    fix2(bannerEl);bannerEl.querySelectorAll("*").forEach(fix2);let pp=bannerEl.parentElement;while(pp&&pp!==document.body){fix2(pp);pp=pp.parentElement}
-                    const cvB=await html2canvas(bannerEl,{scale:2,useCORS:true,logging:false,windowWidth:2000,scrollX:0,scrollY:-window.scrollY,backgroundColor:"#ffffff"});
-                    saved2.forEach((orig,el)=>{(el as HTMLElement).style.overflow=orig.ov;(el as HTMLElement).className=orig.cls});
-                    const duB=cvB.toDataURL("image/png");const binB=atob(duB.split(",")[1]);const arrB=new Uint8Array(binB.length);for(let j=0;j<binB.length;j++)arrB[j]=binB.charCodeAt(j);
-                    const ratio=cvB.height/cvB.width;const bW=640;const bH=Math.round(bW*ratio);
+                    const cap=await capAny(bannerEl);
+                    const r=cap.h/cap.w;const bW2=640;const bH2=Math.round(bW2*r);
                     if(ch.length>0)ch.push(new Paragraph({children:[new PageBreak()]}));
                     ch.push(new Paragraph({spacing:{before:1200},children:[new TextRun("")]}));
-                    ch.push(new Paragraph({alignment:AlignmentType.CENTER,children:[new ImageRun({data:arrB,transformation:{width:bW,height:bH},type:"png"})]}));
+                    ch.push(new Paragraph({alignment:AlignmentType.CENTER,children:[new ImageRun({data:cap.d,transformation:{width:bW2,height:bH2},type:"png"})]}));
                     ch.push(bl());
                   }
-                  /* KPIs as image */
-                  const kpiEl=document.querySelector("[data-multi-kpi=\""+sub.id+"\"]") as HTMLElement|null;
-                  if(kpiEl){
-                    const saved3:Map<Element,{ov:string;cls:string}>=new Map();
-                    const fix3=(el:Element)=>{const h=el as HTMLElement;if(!h.style||!h.className||typeof h.className!=="string")return;if(h.className.includes("overflow-hidden")){saved3.set(el,{ov:h.style.overflow,cls:h.className});h.className=h.className.replace(/overflow-hidden/g,"overflow-visible");h.style.overflow="visible"}};
-                    fix3(kpiEl);kpiEl.querySelectorAll("*").forEach(fix3);let pp2=kpiEl.parentElement;while(pp2&&pp2!==document.body){fix3(pp2);pp2=pp2.parentElement}
-                    const cvK=await html2canvas(kpiEl,{scale:2,useCORS:true,logging:false,windowWidth:2000,scrollX:0,scrollY:-window.scrollY,backgroundColor:"#ffffff"});
-                    saved3.forEach((orig,el)=>{(el as HTMLElement).style.overflow=orig.ov;(el as HTMLElement).className=orig.cls});
-                    const duK=cvK.toDataURL("image/png");const binK=atob(duK.split(",")[1]);const arrK=new Uint8Array(binK.length);for(let j=0;j<binK.length;j++)arrK[j]=binK.charCodeAt(j);
-                    const ratioK=cvK.height/cvK.width;const kW=680;const kH=Math.round(kW*ratioK);
-                    ch.push(hd("Indicadores Clave"));
-                    ch.push(new Paragraph({alignment:AlignmentType.CENTER,spacing:{after:100},children:[new ImageRun({data:arrK,transformation:{width:kW,height:kH},type:"png"})]}));
-                    ch.push(bl());
-                  }
-                  /* Charts as images */
-                  const chartEls=document.querySelectorAll("[data-multi-chart=\""+sub.id+"\"]");
-                  for(const ce of Array.from(chartEls)){
-                    const chartEl=ce as HTMLElement;const title=chartEl.getAttribute("data-chart-title")||"";
-                    const saved4:Map<Element,{ov:string;cls:string}>=new Map();
-                    const fix4=(el:Element)=>{const h=el as HTMLElement;if(!h.style||!h.className||typeof h.className!=="string")return;if(h.className.includes("overflow-hidden")||h.className.includes("overflow-x-auto")){saved4.set(el,{ov:h.style.overflow,cls:h.className});h.className=h.className.replace(/overflow-hidden|overflow-x-auto/g,"overflow-visible");h.style.overflow="visible"}};
-                    fix4(chartEl);chartEl.querySelectorAll("*").forEach(fix4);let pp3=chartEl.parentElement;while(pp3&&pp3!==document.body){fix4(pp3);pp3=pp3.parentElement}
-                    const cvC=await html2canvas(chartEl,{scale:2,useCORS:true,logging:false,windowWidth:2000,scrollX:0,scrollY:-window.scrollY,backgroundColor:"#ffffff"});
-                    saved4.forEach((orig,el)=>{(el as HTMLElement).style.overflow=orig.ov;(el as HTMLElement).className=orig.cls});
-                    const duC=cvC.toDataURL("image/png");const binC=atob(duC.split(",")[1]);const arrC=new Uint8Array(binC.length);for(let j=0;j<binC.length;j++)arrC[j]=binC.charCodeAt(j);
-                    const ratioC=cvC.height/cvC.width;const cW2=680;const cH=Math.round(cW2*ratioC);
-                    if(title)ch.push(hd(title));
-                    ch.push(new Paragraph({alignment:AlignmentType.CENTER,spacing:{after:100},children:[new ImageRun({data:arrC,transformation:{width:cW2,height:cH},type:"png"})]}));
-                    /* AI text for this chart */
-                    const aiKey=chartEl.getAttribute("data-ai-key")||"";
-                    if(aiKey){
-                      const fallbacks:Record<string,()=>string>={"fuentes":()=>aiFuentes(spd),"picos":()=>aiPicos(spd),"hora":()=>aiHora(spd),"sentimiento":()=>aiSent(spd),"tendSent":()=>aiTendSent(spd),"tier":()=>aiTier(spd),"top5med":()=>aiTop5Med(spd),"tipoNota":()=>aiTipoNota(spd),"estado":()=>aiEstado(spd),"topPub":()=>aiTopPub(),"picosRedes":()=>sub.sPd?aiPicos(sub.sPd):"","picosMedios":()=>sub.mPd?aiPicos(sub.mPd):""};
-                      const text=at[aiKey]||(fallbacks[aiKey]?fallbacks[aiKey]():"");
-                      if(text)ch.push(...aiP(text));
+
+                  /* Iterate sections in multiOrder */
+                  for(const secName of multiOrder){
+                    if(multiEnabled[secName]===false)continue;
+
+                    const aiKeyMap:Record<string,string>={"Distribución por Fuente":"fuentes","Tendencia de Conversación":"picos","Actividad por Hora":"hora","Indicadores de Sentimiento":"","Análisis de Sentimiento":"sentimiento","Tendencia del Sentimiento":"tendSent","Distribución de Notas por Tier":"tier","Top 5 Medios con Más Noticias":"top5med","Distribución por Tipo de Nota":"tipoNota","Distribución por Estado":"estado"};
+
+                    if(secName==="Indicadores Clave"){
+                      const kpiEl=document.querySelector("[data-multi-kpi=\""+sub.id+"\"]") as HTMLElement|null;
+                      if(kpiEl){ch.push(hd(multiSecNum(secName)+". "+secName));const cap=await capAny(kpiEl);ch.push(imgFromCap(cap));ch.push(bl())}
+                    }else if(secName==="Resumen Ejecutivo"||secName==="Conclusiones"||secName==="Recomendaciones Estratégicas"){
+                      const kMap:Record<string,string>={"Resumen Ejecutivo":"resumen","Conclusiones":"conclusiones","Recomendaciones Estratégicas":"recomendaciones"};
+                      const txt=getFb(kMap[secName]);
+                      if(txt){ch.push(hd(multiSecNum(secName)+". "+secName));ch.push(...aiP(txt));ch.push(bl())}
+                    }else if(secName==="Temas Clave Destacados"){
+                      const temas=aiTemas(spd,at);
+                      if(temas.length>0){ch.push(hd(multiSecNum(secName)+". "+secName));
+                        for(let ti=0;ti<temas.length;ti++){ch.push(new Paragraph({spacing:{before:120,after:40},children:[new TextRun({text:(ti+1)+". "+temas[ti].tema,bold:true,size:24,font:"Arial"})]}));ch.push(new Paragraph({spacing:{after:80},alignment:AlignmentType.JUSTIFIED,children:mkRuns(temas[ti].detalle)}));}
+                        ch.push(bl());
+                      }
+                    }else if(secName==="Menciones Populares por Sentimiento"){
+                      const menEl=document.querySelector("[data-multi-menciones=\""+sub.id+"\"]") as HTMLElement|null;
+                      if(menEl){ch.push(hd(multiSecNum(secName)+". "+secName));const cap=await capAny(menEl);ch.push(imgFromCap(cap));ch.push(bl())}
+                    }else if(secName==="Top Publicaciones"){
+                      /* Capture entire Top Pub section as image */
+                      ch.push(hd(multiSecNum(secName)+". "+secName));
+                      const tpTxt=getFb("topPub");if(tpTxt)ch.push(...aiP(tpTxt));
+                      /* Just capture charts - TopPub tables are rendered in HTML */
+                      ch.push(bl());
+                    }else{
+                      /* Chart-based sections */
+                      const aiKey=aiKeyMap[secName]||"";
+                      const chartEl=document.querySelector("[data-multi-chart=\""+sub.id+"\"][data-chart-title=\""+secName+"\"]") as HTMLElement|null;
+                      if(chartEl){
+                        ch.push(hd(multiSecNum(secName)+". "+secName));
+                        /* Hide AI blocks inside before capture */
+                        const aiBlocks:HTMLElement[]=[];
+                        chartEl.querySelectorAll("[data-role=\"ai-block\"]").forEach(ab=>{const h=ab as HTMLElement;aiBlocks.push(h);h.style.display="none"});
+                        const cap=await capAny(chartEl);
+                        aiBlocks.forEach(h=>h.style.display="");
+                        ch.push(imgFromCap(cap));
+                        if(aiKey){const txt=getFb(aiKey);if(txt)ch.push(...aiP(txt))}
+                        ch.push(bl());
+                      }
                     }
-                    ch.push(bl());
-                  }
-                  /* Text sections */
-                  const textSecs=[{t:"Resumen Ejecutivo",k:"resumen",fb:()=>aiResumen(spd)},{t:"Conclusiones",k:"conclusiones",fb:()=>aiConc(spd)},{t:"Recomendaciones Estratégicas",k:"recomendaciones",fb:()=>aiRec(spd)}];
-                  for(const ts of textSecs){const txt=at[ts.k]||ts.fb();if(txt){ch.push(hd(ts.t));ch.push(...aiP(txt));ch.push(bl())}}
-                  /* Temas */
-                  const temas=aiTemas(spd,at);
-                  if(temas.length>0){ch.push(hd("Temas Clave Destacados"));
-                    for(let ti=0;ti<temas.length;ti++){ch.push(new Paragraph({spacing:{before:120,after:40},children:[new TextRun({text:(ti+1)+". "+temas[ti].tema,bold:true,size:24,font:"Arial"})]}));ch.push(new Paragraph({spacing:{after:80},alignment:AlignmentType.JUSTIFIED,children:mkRuns(temas[ti].detalle)}));}
-                    ch.push(bl());
                   }
                 }
                 ch.push(new Paragraph({spacing:{before:200},alignment:AlignmentType.CENTER,children:[new TextRun({text:"Generado por ReporteaJDOR",size:16,font:"Arial",color:"94a3b8"})]}));
@@ -1383,6 +1408,7 @@ FORMATO: JSON válido sin markdown ni backticks. NO uses saltos de línea dentro
               setExportLoading("");
             }} className="flex items-center gap-1.5 px-4 py-1.5 border-none rounded-lg cursor-pointer text-xs font-semibold text-white" style={{background:"linear-gradient(135deg,#3b82f6,#2563eb)"}}>{exportLoading?<><RefreshCw size={12} className="animate-spin"/> Exportando...</>:<><Download size={12}/> Exportar Word</>}</button>
           </div>
+          {showChecklist&&<div className="max-w-[940px] mx-auto px-7 py-4"><div className="bg-white rounded-xl p-5 border border-gray-100 shadow-lg"><div className="flex justify-between items-center mb-3"><div className="text-sm font-bold text-gray-700">Módulos activos (aplica a todos los sujetos)</div><div className="text-[10px] text-gray-400">Arrastra para reordenar</div></div><div className="grid gap-1">{multiOrder.map((s,i)=>(<div key={s} draggable onDragStart={()=>handleMultiDragStart(i)} onDragOver={(e)=>handleMultiDragOver(e,i)} onDragEnd={handleDragEnd} className="flex items-center gap-2 px-3 py-2 rounded-lg border border-gray-100 bg-gray-50/50 cursor-grab active:cursor-grabbing hover:bg-blue-50 transition-colors select-none"><div className="text-gray-300 flex-shrink-0"><svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><circle cx="8" cy="4" r="2"/><circle cx="16" cy="4" r="2"/><circle cx="8" cy="12" r="2"/><circle cx="16" cy="12" r="2"/><circle cx="8" cy="20" r="2"/><circle cx="16" cy="20" r="2"/></svg></div><span className="text-[11px] text-gray-500 font-mono w-5">{multiEnabled[s]!==false?String(multiOrder.filter((_,j)=>j<=i&&multiEnabled[_]!==false).length):""}</span><input type="checkbox" checked={multiEnabled[s]!==false} onChange={()=>toggleMultiSec(s)} className="accent-blue-500" onClick={e=>e.stopPropagation()}/><span className="text-xs text-gray-700 flex-1">{s}</span></div>))}</div></div></div>}
           <div ref={multiReportRef} id="multi-report-target" className="max-w-[940px] mx-auto p-7 pb-20 space-y-8">
             {subjects.filter(s=>s.pd).map((sub)=>{
               const spd=sub.pd!;const sat=sub.aiTexts;
@@ -1390,16 +1416,17 @@ FORMATO: JSON válido sin markdown ni backticks. NO uses saltos de línea dentro
               const sTemas=aiTemas(spd,sat);
               const sHasAlc=spd.totalAlcance>0;const sHasCost=spd.totalCosto>0;
               const sCostLabel=spd.dataType==="social"?"AVE":"Costo";
-              return(<div key={sub.id} className="space-y-5">
+              const mSN=(name:string)=>multiSecNum(name)+". ";
+              return(<div key={sub.id} className="flex flex-col gap-5">
                 {/* Banner */}
-                <div data-multi-banner={sub.id} className="rounded-2xl p-8 text-center" style={{background:"linear-gradient(135deg,"+brand.bannerPrimary+","+brand.bannerSecondary+")"}}>
+                <div data-multi-banner={sub.id} className="rounded-2xl p-8 text-center" style={{order:-1,background:"linear-gradient(135deg,"+brand.bannerPrimary+","+brand.bannerSecondary+")"}}>
                   <div className="text-[10px] tracking-widest mb-1" style={{color:brand.titleTextColor+"80"}}>{multiTitle}</div>
                   <div className="text-2xl font-extrabold mb-1" style={{color:brand.titleTextColor,fontFamily:brand.titleFont}}>{sub.name}</div>
                   {multiPeriod&&<div className="text-sm" style={{color:brand.titleTextColor+"80"}}>{"Periodo: "+multiPeriod}</div>}
                   <div className="mt-2"><span className="px-3 py-1 rounded-full text-[10px] font-semibold bg-white/10" style={{color:brand.titleTextColor+"99"}}>{spd.dataType==="social"?"Redes Sociales":spd.dataType==="media"?"Medios":"Medios + Redes"} — {spd.totalMenciones} menciones</span></div>
                 </div>
                 {/* KPIs */}
-                <Sec title="Indicadores Clave" icon={<BarChart3 size={18} color={brand.accentColor}/>} brand={brand}>
+                <div style={{order:multiOrder.indexOf("Indicadores Clave")}}>{multiOn("Indicadores Clave")&&<Sec title={mSN("Indicadores Clave")+"Indicadores Clave"} icon={<BarChart3 size={18} color={brand.accentColor}/>} brand={brand}>
                   <div data-multi-kpi={sub.id}>
                     <div className="flex gap-3 flex-wrap mb-4">
                       <KPI title="Menciones" value={spd.totalMenciones} icon={<MessageSquare size={14} color="#3b82f6"/>} color="#3b82f6" brand={brand}/>
@@ -1409,31 +1436,31 @@ FORMATO: JSON válido sin markdown ni backticks. NO uses saltos de línea dentro
                       <KPI title="Sent. Neto" value={spd.sentNeto.toFixed(1)+"%"} icon={<BarChart3 size={14} color={spd.sentNeto>=0?"#10b981":"#ef4444"}/>} color={spd.sentNeto>=0?"#10b981":"#ef4444"} brand={brand}/>
                     </div>
                   </div>
-                </Sec>
+                </Sec>}</div>
                 {/* Distribution chart */}
-                <Sec title="Distribución por Fuente" icon={<Globe size={18} color={brand.accentColor}/>} brand={brand}>
+                <div style={{order:multiOrder.indexOf("Distribución por Fuente")}}>{multiOn("Distribución por Fuente")&&<Sec title={mSN("Distribución por Fuente")+"Distribución por Fuente"} icon={<Globe size={18} color={brand.accentColor}/>} brand={brand}>
                   <div data-multi-chart={sub.id} data-chart-title="Distribución por Fuente" data-ai-key="fuentes">
                     <ResponsiveContainer width="100%" height={280}><BarChart data={spd.fuenteData} margin={{top:20,right:20,left:0,bottom:0}}><CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0"/><XAxis dataKey="fuente" tick={{fontSize:12,fill:"#64748b"}}/><YAxis tick={{fontSize:11,fill:"#94a3b8"}}/><Tooltip/><Bar dataKey="total" radius={[6,6,0,0]} name="Total" label={{position:"top",fill:"#64748b",fontSize:12,fontWeight:700}}>{spd.fuenteData.map((e,i)=><Cell key={i} fill={srcC[e.fuente]||brand.mediaColors[e.fuente]||brand.chartColors[i%7]}/>)}</Bar></BarChart></ResponsiveContainer>
                   </div>
                   <div className="mt-4"><AIBlock text={sAiT("fuentes",aiFuentes(spd))} brand={brand} loading={false}/></div>
-                </Sec>
+                </Sec>}</div>
                 {/* Resumen */}
-                <Sec title="Resumen Ejecutivo" icon={<FileText size={18} color={brand.accentColor}/>} brand={brand}>
+                <div style={{order:multiOrder.indexOf("Resumen Ejecutivo")}}>{multiOn("Resumen Ejecutivo")&&<Sec title={mSN("Resumen Ejecutivo")+"Resumen Ejecutivo"} icon={<FileText size={18} color={brand.accentColor}/>} brand={brand}>
                   <AIBlock text={sAiT("resumen",aiResumen(spd))} brand={brand} loading={false}/>
-                </Sec>
+                </Sec>}</div>
                 {/* Temas */}
-                {sTemas.length>0&&<Sec title="Temas Clave Destacados" icon={<Lightbulb size={18} color={brand.accentColor}/>} brand={brand}>
+                <div style={{order:multiOrder.indexOf("Temas Clave Destacados")}}>{multiOn("Temas Clave Destacados")&&sTemas.length>0&&<Sec title={mSN("Temas Clave Destacados")+"Temas Clave Destacados"} icon={<Lightbulb size={18} color={brand.accentColor}/>} brand={brand}>
                   <div className="grid gap-3">{sTemas.map((t,ti)=>(<div key={ti} className="p-4 bg-gray-50 rounded-xl border border-gray-100"><div className="flex items-center gap-2 mb-2"><div className="w-6 h-6 rounded-full flex items-center justify-center text-[11px] font-bold text-white" style={{background:brand.chartColors[ti]}}>{ti+1}</div><span className="text-sm font-bold text-gray-800">{t.tema}</span></div><p className="text-xs text-gray-600 leading-relaxed">{t.detalle}</p></div>))}</div>
-                </Sec>}
+                </Sec>}</div>
                 {/* Trend chart */}
-                <Sec title="Tendencia de Conversación" icon={<TrendingUp size={18} color={brand.accentColor}/>} brand={brand}>
+                <div style={{order:multiOrder.indexOf("Tendencia de Conversación")}}>{multiOn("Tendencia de Conversación")&&<Sec title={mSN("Tendencia de Conversación")+"Tendencia de Conversación"} icon={<TrendingUp size={18} color={brand.accentColor}/>} brand={brand}>
                   <div data-multi-chart={sub.id} data-chart-title="Tendencia de Conversación" data-ai-key="picos">
                     <ResponsiveContainer width="100%" height={220}><LineChart data={spd.trendData}><CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0"/><XAxis dataKey="date" tick={{fontSize:11,fill:"#94a3b8"}} tickFormatter={(v:string)=>v.substring(5)}/><YAxis tick={{fontSize:11,fill:"#94a3b8"}} allowDecimals={false}/><Tooltip/><Line type="monotone" dataKey="total" stroke={brand.chartColors[0]} strokeWidth={3} dot={{fill:brand.chartColors[0],r:4}} name="Total"/></LineChart></ResponsiveContainer>
                   </div>
                   <div className="mt-4"><AIBlock text={sAiT("picos",aiPicos(spd))} brand={brand} loading={false}/></div>
-                </Sec>
+                </Sec>}</div>
                 {/* Sentiment KPIs */}
-                <Sec title="Indicadores de Sentimiento" icon={<BarChart3 size={18} color={brand.accentColor}/>} brand={brand}>
+                <div style={{order:multiOrder.indexOf("Indicadores de Sentimiento")}}>{multiOn("Indicadores de Sentimiento")&&<Sec title={mSN("Indicadores de Sentimiento")+"Indicadores de Sentimiento"} icon={<BarChart3 size={18} color={brand.accentColor}/>} brand={brand}>
                   <div data-multi-chart={sub.id} data-chart-title="Indicadores de Sentimiento" data-ai-key="">
                     <div className="flex gap-3 flex-wrap">
                       <KPI title="Positivas" value={spd.sentCounts.Positivo} icon={<ThumbsUp size={14} color={brand.positiveColor}/>} color={brand.positiveColor} brand={brand}/>
@@ -1442,76 +1469,76 @@ FORMATO: JSON válido sin markdown ni backticks. NO uses saltos de línea dentro
                       <KPI title="Sent. Neto" value={spd.sentNeto.toFixed(1)+"%"} icon={<BarChart3 size={14} color={spd.sentNeto>=0?brand.positiveColor:brand.negativeColor}/>} color={spd.sentNeto>=0?brand.positiveColor:brand.negativeColor} brand={brand}/>
                     </div>
                   </div>
-                </Sec>
+                </Sec>}</div>
                 {/* Sentiment analysis */}
-                <Sec title="Análisis de Sentimiento" icon={<MessageSquare size={18} color={brand.accentColor}/>} brand={brand}>
+                <div style={{order:multiOrder.indexOf("Análisis de Sentimiento")}}>{multiOn("Análisis de Sentimiento")&&<Sec title={mSN("Análisis de Sentimiento")+"Análisis de Sentimiento"} icon={<MessageSquare size={18} color={brand.accentColor}/>} brand={brand}>
                   <div data-multi-chart={sub.id} data-chart-title="Análisis de Sentimiento" data-ai-key="sentimiento">
                     <div className="flex justify-center mb-4"><Donut data={spd.sentCounts} brand={brand} title="General"/></div>
                     <div className="flex gap-3 justify-center mb-4 flex-wrap">{spd.fuenteData.map((f,i)=><Donut key={i} data={{Positivo:f.Positivo,Negativo:f.Negativo,Neutro:f.Neutro}} brand={brand} title={f.fuente}/>)}</div>
                   </div>
                   <AIBlock text={sAiT("sentimiento",aiSent(spd))} brand={brand} loading={false}/>
-                </Sec>
+                </Sec>}</div>
                 {/* Sentiment trend */}
-                <Sec title="Tendencia del Sentimiento" icon={<TrendingUp size={18} color={brand.accentColor}/>} brand={brand}>
+                <div style={{order:multiOrder.indexOf("Tendencia del Sentimiento")}}>{multiOn("Tendencia del Sentimiento")&&<Sec title={mSN("Tendencia del Sentimiento")+"Tendencia del Sentimiento"} icon={<TrendingUp size={18} color={brand.accentColor}/>} brand={brand}>
                   <div data-multi-chart={sub.id} data-chart-title="Tendencia del Sentimiento" data-ai-key="tendSent">
                     <ResponsiveContainer width="100%" height={260}><LineChart data={spd.trendData}><CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0"/><XAxis dataKey="date" tick={{fontSize:11,fill:"#94a3b8"}} tickFormatter={(v:string)=>v.substring(5)}/><YAxis tick={{fontSize:11,fill:"#94a3b8"}} allowDecimals={false}/><Tooltip/><Legend/><Line type="monotone" dataKey="Positivo" stroke={brand.positiveColor} strokeWidth={2.5} dot={{r:3}}/><Line type="monotone" dataKey="Negativo" stroke={brand.negativeColor} strokeWidth={2.5} dot={{r:3}}/><Line type="monotone" dataKey="Neutro" stroke={brand.neutralColor} strokeWidth={2.5} dot={{r:3}}/></LineChart></ResponsiveContainer>
                   </div>
                   <div className="mt-4"><AIBlock text={sAiT("tendSent",aiTendSent(spd))} brand={brand} loading={false}/></div>
-                </Sec>
+                </Sec>}</div>
                 {/* Hora - social/fusionado only */}
-                {(spd.dataType==="social"||spd.dataType==="fusionado")&&spd.hourData&&<Sec title="Actividad por Hora" icon={<Clock size={18} color={brand.accentColor}/>} brand={brand}>
+                <div style={{order:multiOrder.indexOf("Actividad por Hora")}}>{multiOn("Actividad por Hora")&&(spd.dataType==="social"||spd.dataType==="fusionado")&&spd.hourData&&<Sec title={mSN("Actividad por Hora")+"Actividad por Hora"} icon={<Clock size={18} color={brand.accentColor}/>} brand={brand}>
                   <div data-multi-chart={sub.id} data-chart-title="Actividad por Hora" data-ai-key="hora">
                     {(()=>{const mx=spd.hourData.reduce((m,x)=>x.total>m.total?x:m,{hora:-1,total:0});return(<ResponsiveContainer width="100%" height={220}><BarChart data={spd.hourData} margin={{top:20,right:20,left:0,bottom:0}}><CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0"/><XAxis dataKey="hora" tick={{fontSize:10,fill:"#64748b"}} tickFormatter={(v:number)=>v+"h"}/><YAxis tick={{fontSize:11,fill:"#94a3b8"}} allowDecimals={false}/><Tooltip/><Bar dataKey="total" radius={[4,4,0,0]} name="Publicaciones" label={{position:"top",fill:"#64748b",fontSize:10,fontWeight:700}}>{spd.hourData.map((h,i)=><Cell key={i} fill={h.hora===mx.hora?"#f59e0b":brand.chartColors[0]}/>)}</Bar></BarChart></ResponsiveContainer>)})()}
                   </div>
                   <div className="mt-4"><AIBlock text={sAiT("hora",aiHora(spd))} brand={brand} loading={false}/></div>
-                </Sec>}
+                </Sec>}</div>
                 {/* Menciones Populares por Sentimiento */}
-                <Sec title="Menciones Populares por Sentimiento" icon={<MessageSquare size={18} color={brand.accentColor}/>} brand={brand}>
-                  <div className="grid grid-cols-2 gap-x-5 gap-y-0 mb-3"><div className="flex items-center gap-2 mb-2"><ThumbsUp size={14} color={brand.positiveColor}/><span className="text-sm font-bold" style={{color:brand.positiveColor}}>Top 5 Positivas</span></div><div className="flex items-center gap-2 mb-2"><ThumbsDown size={14} color={brand.negativeColor}/><span className="text-sm font-bold" style={{color:brand.negativeColor}}>Top 5 Negativas</span></div></div>
+                <div style={{order:multiOrder.indexOf("Menciones Populares por Sentimiento")}}>{multiOn("Menciones Populares por Sentimiento")&&<Sec title={mSN("Menciones Populares por Sentimiento")+"Menciones Populares por Sentimiento"} icon={<MessageSquare size={18} color={brand.accentColor}/>} brand={brand}>
+                  <div data-multi-menciones={sub.id} className="grid grid-cols-2 gap-x-5 gap-y-0 mb-3"><div className="flex items-center gap-2 mb-2"><ThumbsUp size={14} color={brand.positiveColor}/><span className="text-sm font-bold" style={{color:brand.positiveColor}}>Top 5 Positivas</span></div><div className="flex items-center gap-2 mb-2"><ThumbsDown size={14} color={brand.negativeColor}/><span className="text-sm font-bold" style={{color:brand.negativeColor}}>Top 5 Negativas</span></div></div>
                   {Array.from({length:5}).map((_,i)=>(<div key={i} className="grid grid-cols-2 gap-5 mb-2">{spd.topPositivas[i]?<MenCard {...spd.topPositivas[i]} brand={brand} tipo="positivo"/>:<div/>}{spd.topNegativas[i]?<MenCard {...spd.topNegativas[i]} brand={brand} tipo="negativo"/>:<div/>}</div>))}
-                </Sec>
+                </Sec>}</div>
                 {/* Media-only sections */}
-                {(spd.dataType==="media"||spd.dataType==="fusionado")&&spd.tierData&&spd.tierData.length>0&&<Sec title="Distribución de Notas por Tier" icon={<Layers size={18} color={brand.accentColor}/>} brand={brand}>
+                <div style={{order:multiOrder.indexOf("Distribución de Notas por Tier")}}>{multiOn("Distribución de Notas por Tier")&&(spd.dataType==="media"||spd.dataType==="fusionado")&&spd.tierData&&spd.tierData.length>0&&<Sec title={mSN("Distribución de Notas por Tier")+"Distribución de Notas por Tier"} icon={<Layers size={18} color={brand.accentColor}/>} brand={brand}>
                   <div data-multi-chart={sub.id} data-chart-title="Distribución de Notas por Tier" data-ai-key="tier">
                     <GenChart data={spd.tierData} brand={brand} colors={spd.tierData.map(t=>brand.tierColors[t.name]||"#94a3b8")}/>
                   </div>
                   <div className="mt-4"><AIBlock text={sAiT("tier",aiTier(spd))} brand={brand} loading={false}/></div>
-                </Sec>}
-                {(spd.dataType==="media"||spd.dataType==="fusionado")&&spd.top5Medios&&spd.top5Medios.length>0&&<Sec title="Top 5 Medios con Más Noticias" icon={<Trophy size={18} color={brand.accentColor}/>} brand={brand}>
+                </Sec>}</div>
+                <div style={{order:multiOrder.indexOf("Top 5 Medios con Más Noticias")}}>{multiOn("Top 5 Medios con Más Noticias")&&(spd.dataType==="media"||spd.dataType==="fusionado")&&spd.top5Medios&&spd.top5Medios.length>0&&<Sec title={mSN("Top 5 Medios con Más Noticias")+"Top 5 Medios con Más Noticias"} icon={<Trophy size={18} color={brand.accentColor}/>} brand={brand}>
                   <div data-multi-chart={sub.id} data-chart-title="Top 5 Medios con Más Noticias" data-ai-key="top5med">
                     <GenChart data={spd.top5Medios.map(m=>({name:m.nombre,value:m.total}))} brand={brand} colors={genPalette(brand.primaryColor,brand.secondaryColor,spd.top5Medios.length)} vertical={false}/>
                   </div>
                   <div className="mt-4"><AIBlock text={sAiT("top5med",aiTop5Med(spd))} brand={brand} loading={false}/></div>
-                </Sec>}
-                {(spd.dataType==="media"||spd.dataType==="fusionado")&&spd.tipoNotaData&&spd.tipoNotaData.length>0&&<Sec title="Distribución por Tipo de Nota" icon={<List size={18} color={brand.accentColor}/>} brand={brand}>
+                </Sec>}</div>
+                <div style={{order:multiOrder.indexOf("Distribución por Tipo de Nota")}}>{multiOn("Distribución por Tipo de Nota")&&(spd.dataType==="media"||spd.dataType==="fusionado")&&spd.tipoNotaData&&spd.tipoNotaData.length>0&&<Sec title={mSN("Distribución por Tipo de Nota")+"Distribución por Tipo de Nota"} icon={<List size={18} color={brand.accentColor}/>} brand={brand}>
                   <div data-multi-chart={sub.id} data-chart-title="Distribución por Tipo de Nota" data-ai-key="tipoNota">
                     <GenChart data={spd.tipoNotaData} brand={brand} colors={genPalette(brand.primaryColor,brand.secondaryColor,spd.tipoNotaData.length)}/>
                   </div>
                   <div className="mt-4"><AIBlock text={sAiT("tipoNota",aiTipoNota(spd))} brand={brand} loading={false}/></div>
-                </Sec>}
-                {(spd.dataType==="media"||spd.dataType==="fusionado")&&spd.estadoData&&spd.estadoData.length>0&&<Sec title="Distribución por Estado" icon={<MapPin size={18} color={brand.accentColor}/>} brand={brand}>
+                </Sec>}</div>
+                <div style={{order:multiOrder.indexOf("Distribución por Estado")}}>{multiOn("Distribución por Estado")&&(spd.dataType==="media"||spd.dataType==="fusionado")&&spd.estadoData&&spd.estadoData.length>0&&<Sec title={mSN("Distribución por Estado")+"Distribución por Estado"} icon={<MapPin size={18} color={brand.accentColor}/>} brand={brand}>
                   <div data-multi-chart={sub.id} data-chart-title="Distribución por Estado" data-ai-key="estado">
                     <GenChart data={spd.estadoData} brand={brand} colors={genPalette(brand.secondaryColor,brand.primaryColor,spd.estadoData.length)}/>
                   </div>
                   <div className="mt-4"><AIBlock text={sAiT("estado",aiEstado(spd))} brand={brand} loading={false}/></div>
-                </Sec>}
+                </Sec>}</div>
                 {/* Top 5 */}
-                <Sec title="Top Publicaciones" icon={<Trophy size={18} color={brand.accentColor}/>} brand={brand}>
+                <div style={{order:multiOrder.indexOf("Top Publicaciones")}}>{multiOn("Top Publicaciones")&&<Sec title={mSN("Top Publicaciones")+"Top Publicaciones"} icon={<Trophy size={18} color={brand.accentColor}/>} brand={brand}>
                   <AIBlock text={sAiT("topPub",aiTopPub())} brand={brand} loading={false}/>
                   <div className="mt-4">
                     {sHasAlc&&sHasCost?(<div className="grid grid-cols-2 gap-4 mb-5"><div><div className="text-xs font-bold text-gray-700 mb-2">Top 5 General por Alcance</div><T5Table items={spd.top5AlcGeneral} label="Alcance" brand={brand} showTitulo/></div><div><div className="text-xs font-bold text-gray-700 mb-2">Top 5 General por {sCostLabel}</div><T5Table items={spd.top5CostGeneral} label={sCostLabel} brand={brand} showTitulo/></div></div>):sHasAlc?(<div className="flex justify-center mb-5"><div className="w-full max-w-lg"><div className="text-xs font-bold text-gray-700 mb-2">Top 5 General por Alcance</div><T5Table items={spd.top5AlcGeneral} label="Alcance" brand={brand} showTitulo/></div></div>):sHasCost?(<div className="flex justify-center mb-5"><div className="w-full max-w-lg"><div className="text-xs font-bold text-gray-700 mb-2">Top 5 General por {sCostLabel}</div><T5Table items={spd.top5CostGeneral} label={sCostLabel} brand={brand} showTitulo/></div></div>):null}
                     {/* Per-source tables */}
                     {(spd.dataType==="social"?VS:spd.dataType==="media"?VM:[...VS,...VM]).filter(s=>spd.top5AlcPorFuente[s]?.length>0||spd.top5CostPorFuente[s]?.length>0).map(s=>(<div key={s} className="mb-4"><div className="flex items-center gap-2 mb-2"><div className="w-6 h-6 rounded-lg flex items-center justify-center" style={{background:srcC[s]||brand.mediaColors[s]||brand.chartColors[0]}}>{socIco[s]||medIco[s]||<span className="text-white text-[10px] font-bold">{s.substring(0,2)}</span>}</div><span className="text-sm font-bold text-gray-800">{s}</span></div><div className="grid grid-cols-2 gap-4">{sHasAlc&&spd.top5AlcPorFuente[s]?.length>0&&<div><div className="text-[11px] font-semibold text-gray-500 mb-1">Por Alcance</div><T5Table items={spd.top5AlcPorFuente[s]} label="Alcance" brand={brand} showTitulo/></div>}{sHasCost&&spd.top5CostPorFuente[s]?.length>0&&<div><div className="text-[11px] font-semibold text-gray-500 mb-1">Por {sCostLabel}</div><T5Table items={spd.top5CostPorFuente[s]} label={sCostLabel} brand={brand} showTitulo/></div>}</div></div>))}
                   </div>
-                </Sec>
+                </Sec>}</div>
                 {/* Conclusiones */}
-                <Sec title="Conclusiones" icon={<FileText size={18} color={brand.accentColor}/>} brand={brand}>
+                <div style={{order:multiOrder.indexOf("Conclusiones")}}>{multiOn("Conclusiones")&&<Sec title={mSN("Conclusiones")+"Conclusiones"} icon={<FileText size={18} color={brand.accentColor}/>} brand={brand}>
                   <AIBlock text={sAiT("conclusiones",aiConc(spd))} brand={brand} loading={false}/>
-                </Sec>
+                </Sec>}</div>
                 {/* Recomendaciones */}
-                <Sec title="Recomendaciones Estratégicas" icon={<Lightbulb size={18} color={brand.accentColor}/>} brand={brand}>
+                <div style={{order:multiOrder.indexOf("Recomendaciones Estratégicas")}}>{multiOn("Recomendaciones Estratégicas")&&<Sec title={mSN("Recomendaciones Estratégicas")+"Recomendaciones Estratégicas"} icon={<Lightbulb size={18} color={brand.accentColor}/>} brand={brand}>
                   <AIBlock text={sAiT("recomendaciones",aiRec(spd))} brand={brand} loading={false}/>
-                </Sec>
+                </Sec>}</div>
                 {/* Separator between subjects */}
                 <div className="border-t-4 border-gray-200 my-8"/>
               </div>);
