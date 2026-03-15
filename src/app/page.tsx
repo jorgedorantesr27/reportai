@@ -535,6 +535,7 @@ FORMATO: JSON válido sin markdown ni backticks. NO uses saltos de línea dentro
   const[multiDateEnd,setMultiDateEnd]=useState("");
   const[multiPeriod,setMultiPeriod]=useState("");
   const[multiAiLoading,setMultiAiLoading]=useState(false);
+  const[multiGenStatus,setMultiGenStatus]=useState("");
   const[multiGenerated,setMultiGenerated]=useState(false);
   const[multiOrder,setMultiOrder]=useState<string[]>(MULTI_SECS);
   const[multiEnabled,setMultiEnabled]=useState<Record<string,boolean>>(()=>{const m:Record<string,boolean>={};MULTI_SECS.forEach(s=>m[s]=true);return m});
@@ -569,88 +570,115 @@ FORMATO: JSON válido sin markdown ni backticks. NO uses saltos de línea dentro
   /* Single Gemini call for ALL subjects */
   const generateMultiAI=async()=>{
     if(!geminiKey||subjects.length===0)return;
-    setMultiAiLoading(true);
+    setMultiAiLoading(true);setMultiGenStatus("");
     try{
-      /* Build a mega-prompt with all subjects */
-      let megaPrompt="Eres un analista senior de monitoreo de medios.\nGenera un análisis COMPLETO para CADA sujeto listado abajo.\n\n";
-      megaPrompt+="RESPONDE EXCLUSIVAMENTE con un JSON válido. La estructura es:\n{\n";
-      megaPrompt+=subjects.map(s=>'  "'+s.name+'": { "resumen":"...", "temas":"[array JSON]", "picos":"...", "sentimiento":"...", "tendSent":"...", "fuentes":"...", "hora":"...", "tier":"...", "top5med":"...", "tipoNota":"...", "estado":"...", "topPub":"...", "conclusiones":"...", "recomendaciones":"..." }').join(",\n");
-      megaPrompt+="\n}\n\n";
-      megaPrompt+="REGLAS IMPORTANTES:\n";
-      megaPrompt+="- Cada sección usa \" || \" para separar párrafos. Cada párrafo debe tener al menos 3-4 oraciones.\n";
-      megaPrompt+="- Nombres de medios/usuarios con ***nombre***\n";
-      megaPrompt+="- SIEMPRE usa el formato [Ver fuente](URL_COMPLETA) para enlaces. NUNCA pongas URLs sueltas ni entre corchetes solos como [https://...]. Siempre así: [Ver fuente](https://ejemplo.com/nota)\n";
-      megaPrompt+="- NUNCA cuestionar la clasificación de sentimiento\n";
-      megaPrompt+="- Cada sujeto tiene su análisis INDEPENDIENTE y EXTENSO\n";
-      megaPrompt+="- El resumen debe tener mínimo 4 párrafos con contexto, narrativa dominante, dinámica y balance reputacional\n";
-      megaPrompt+="- Las conclusiones deben tener mínimo 3 párrafos\n";
-      megaPrompt+="- Las recomendaciones deben tener mínimo 4 recomendaciones separadas por ||, cada una con **Título:** explicación\n";
-      megaPrompt+="- El campo temas DEBE ser un array JSON con 3-5 objetos {tema:string, detalle:string}. El detalle debe ser extenso (3+ oraciones) y mencionar fuentes con ***nombre***\n";
-      megaPrompt+="- Los campos picos, sentimiento, tendSent, fuentes, hora, tier, top5med, tipoNota, estado deben tener análisis de al menos 2 párrafos cada uno\n\n";
+      /* Build per-subject prompts identical to single-subject quality */
+      const fmtSM=(r:SocialRow,i:number)=>`[S${i+1}] ${r.Fuente}|@${r.Autor}|${r.Sentimiento}|${r.Alcance} alc|"${(r.Contenido||"").substring(0,120)}"|${r.Link||"sin link"}`;
+      const fmtMM=(r:MediaRow,i:number)=>`[M${i+1}] ${r.TipoMedio}|${r.Medio}|${r.Sentimiento}|${r.Alcance} alc|"${(r.Titulo||"").substring(0,120)}"|${r.Link||"sin link"}`;
 
-      for(const sub of subjects){
-        if(!sub.pd)continue;
-        const d=sub.pd;
-        megaPrompt+="\n═══════════════════════════════════════\n";
+      let megaPrompt="Eres un analista senior experto en monitoreo de medios, reputación y análisis de opinión pública.\n";
+      megaPrompt+="Genera un análisis COMPLETO e INDEPENDIENTE para CADA sujeto listado abajo.\n\n";
+      megaPrompt+="RESPONDE EXCLUSIVAMENTE con un JSON válido. La estructura es:\n{\n";
+      megaPrompt+=subjects.filter(s=>s.pd).map(s=>'  "'+s.name+'": { "resumen":"...", "temas":[{...}], "picos":"...", "sentimiento":"...", "tendSent":"...", "fuentes":"...", "hora":"...", "tier":"...", "top5med":"...", "tipoNota":"...", "estado":"...", "topPub":"...", "conclusiones":"...", "recomendaciones":"..." }').join(",\n");
+      megaPrompt+="\n}\n\n";
+
+      /* REGLAS - copied from single subject */
+      megaPrompt+="═══ REGLAS FUNDAMENTALES (APLICAN A TODOS LOS SUJETOS) ═══\n";
+      megaPrompt+="DOCUMENTO PARA CLIENTE FINAL. CAUSALIDAD: No solo describas el qué, explica el PORQUÉ.\n";
+      megaPrompt+="REGLA ABSOLUTA: NUNCA cuestionar la clasificación de sentimiento. El sentimiento asignado es un hecho. Si una mención es negativa, analiza qué aspectos del contenido generan esa percepción. NUNCA escribas NADA parecido a: \"el sistema clasificó mal\", \"pudo haber interpretado\", \"fue clasificada como negativa por el sistema\", \"carente de positividad\".\n";
+      megaPrompt+="NUNCA mencionar limitaciones de datos, el sistema, algoritmo, herramienta de monitoreo ni metodología.\n";
+      megaPrompt+="NUNCA dar recomendaciones excepto en \"recomendaciones\".\n\n";
+
+      megaPrompt+="FORMATO DE CITAS OBLIGATORIO: Para citar fuentes usa EXACTAMENTE: [Ver fuente](URL_COMPLETA). NUNCA uses URLs sueltas. NUNCA uses [https://...]. SIEMPRE: [Ver fuente](https://ejemplo.com/nota123).\n";
+      megaPrompt+="FORMATO DE NOMBRES: ***solo*** para nombres de FUENTES (medios y @usuarios). NUNCA para personas/marcas/eventos mencionados.\n";
+      megaPrompt+="Separar párrafos con \" || \". NO usar saltos de línea dentro de valores JSON.\n\n";
+
+      megaPrompt+="═══ INSTRUCCIONES POR SECCIÓN (PARA CADA SUJETO) ═══\n";
+      megaPrompt+='"resumen" — 4 párrafos mínimo separados por " || ": 1) Contexto general con [Ver fuente](url). 2) Narrativa dominante con [Ver fuente](url). 3) Dinámica de cobertura con [Ver fuente](url). 4) Balance reputacional.\n';
+      megaPrompt+='"temas" — Array JSON de 3-5 objetos {"tema":"Nombre","detalle":"Explicación extensa 3-4 oraciones con ***fuente*** y [Ver fuente](url)"}\n';
+      megaPrompt+='"picos" — Picos en tendencia temporal, qué eventos los causaron. 2+ párrafos con [Ver fuente](url).\n';
+      megaPrompt+='"sentimiento" — Qué TEMAS generan sentimiento positivo y negativo, POR QUÉ. Citar menciones con [Ver fuente](url). 2+ párrafos separados por " || ".\n';
+      megaPrompt+='"tendSent" — Picos de sentimiento positivo/negativo en el tiempo. Con [Ver fuente](url).\n';
+      megaPrompt+='"fuentes" — Qué fuente/red domina y por qué. 2-3 oraciones.\n';
+      megaPrompt+='"hora" — Distribución HORARIA (0-23h), horas pico y por qué. 2-3 oraciones.\n';
+      megaPrompt+='"tier" — Distribución de tiers. 2-3 oraciones.\n';
+      megaPrompt+='"top5med" — Medios con más cobertura. 2-3 oraciones.\n';
+      megaPrompt+='"tipoNota" — Tipos de nota predominantes. 2-3 oraciones.\n';
+      megaPrompt+='"estado" — Focos geográficos. 2-3 oraciones.\n';
+      megaPrompt+='"topPub" — Publicaciones de mayor impacto. 2-3 oraciones.\n';
+      megaPrompt+='"conclusiones" — 3+ párrafos separados por " || ". Salud reputacional, fortalezas y riesgos. Con [Ver fuente](url). SIN recomendaciones.\n';
+      megaPrompt+='"recomendaciones" — 4+ recomendaciones. Formato: **Título:** explicación. Separadas por " || ".\n\n';
+
+      /* Per-subject data - rich like single subject */
+      for(const sub of subjects.filter(s=>s.pd)){
+        const d=sub.pd!;
+        const socRows=(d.rawRows||[]).filter((r):r is SocialRow=>"Fuente" in r);
+        const medRows=(d.rawRows||[]).filter((r):r is MediaRow=>"TipoMedio" in r);
+        const topPos=[...d.topPositivas.slice(0,5)];
+        const topNeg=[...d.topNegativas.slice(0,5)];
+        const fuenteDist=d.fuenteData.map(f=>f.fuente+": "+f.total+" menciones (Pos:"+f.Positivo+" Neg:"+f.Negativo+" Neu:"+f.Neutro+")").join(", ");
+        const trendPeaks=[...d.trendData].sort((a,b)=>b.total-a.total).slice(0,5).map(t=>t.date+": "+t.total+" menciones").join(", ");
+        const allSoc=socRows.slice(0,15);
+        const allMed=medRows.slice(0,15);
+
+        megaPrompt+="\n══════════════════════════════════════════════\n";
         megaPrompt+="SUJETO: "+sub.name+"\n";
         if(sub.focus)megaPrompt+="ENFOQUE: "+sub.focus+"\n";
         if(sub.tone)megaPrompt+="TONO: "+sub.tone+"\n";
         if(sub.instructions)megaPrompt+="INSTRUCCIONES: "+sub.instructions+"\n";
         megaPrompt+="TIPO: "+(d.dataType==="social"?"Redes Sociales":d.dataType==="media"?"Medios Tradicionales":"Redes + Medios")+"\n";
-        megaPrompt+="MENCIONES: "+d.totalMenciones+" | ALCANCE: "+d.totalAlcance+" | SENT.NETO: "+d.sentNeto.toFixed(1)+"%\n";
-        megaPrompt+="POSITIVO: "+d.sentCounts.Positivo+" | NEGATIVO: "+d.sentCounts.Negativo+" | NEUTRO: "+d.sentCounts.Neutro+"\n";
-        if(d.fuenteData)megaPrompt+="FUENTES: "+d.fuenteData.map(f=>f.fuente+"("+f.total+")").join(", ")+"\n";
-        if(d.hourData){const mx=d.hourData.reduce((m,x)=>x.total>m.total?x:m,{hora:0,total:0});megaPrompt+="HORA PICO: "+mx.hora+"h con "+mx.total+" publicaciones\n";}
-        if(d.tierData&&d.tierData.length>0)megaPrompt+="TIER: "+d.tierData.map(t=>t.name+"("+t.value+")").join(", ")+"\n";
-        if(d.tipoNotaData&&d.tipoNotaData.length>0)megaPrompt+="TIPO NOTA: "+d.tipoNotaData.map(t=>t.name+"("+t.value+")").join(", ")+"\n";
-        if(d.estadoData&&d.estadoData.length>0)megaPrompt+="ESTADOS: "+d.estadoData.slice(0,5).map(t=>t.name+"("+t.value+")").join(", ")+"\n";
-        /* Top mentions */
-        const topP=d.topPositivas.slice(0,3).map(r=>r.autor+": "+r.contenido.substring(0,100)+" ["+r.link+"]").join("\n");
-        const topN=d.topNegativas.slice(0,3).map(r=>r.autor+": "+r.contenido.substring(0,100)+" ["+r.link+"]").join("\n");
-        if(topP)megaPrompt+="POSITIVAS:\n"+topP+"\n";
-        if(topN)megaPrompt+="NEGATIVAS:\n"+topN+"\n";
-        megaPrompt+="═══════════════════════════════════════\n";
+        megaPrompt+="Total menciones: "+d.totalMenciones+"\n";
+        megaPrompt+="Alcance: "+d.totalAlcance.toLocaleString()+"\n";
+        megaPrompt+="Interacciones: "+d.totalInteracciones.toLocaleString()+"\n";
+        megaPrompt+="Costo/AVE: $"+d.totalCosto.toLocaleString()+"\n";
+        megaPrompt+="Sentimiento: Positivo "+d.sentCounts.Positivo+", Negativo "+d.sentCounts.Negativo+", Neutro "+d.sentCounts.Neutro+"\n";
+        megaPrompt+="Sentimiento Neto: "+d.sentNeto.toFixed(1)+"%\n";
+        megaPrompt+="Distribución por fuente: "+fuenteDist+"\n";
+        megaPrompt+="Picos (top 5 días): "+trendPeaks+"\n";
+        if(d.hourData&&d.hourData.length>0)megaPrompt+="Distribución horaria: "+d.hourData.filter(h=>h.total>0).map(h=>h.hora+"h:"+h.total).join(", ")+"\n";
+        if(d.tierData&&d.tierData.length>0)megaPrompt+="Tiers: "+d.tierData.map(t=>t.name+":"+t.value).join(", ")+"\n";
+        if(d.top5Medios&&d.top5Medios.length>0)megaPrompt+="Top medios: "+d.top5Medios.map(m=>m.nombre+":"+m.total).join(", ")+"\n";
+        if(d.tipoNotaData&&d.tipoNotaData.length>0)megaPrompt+="Tipo nota: "+d.tipoNotaData.map(t=>t.name+":"+t.value).join(", ")+"\n";
+        if(d.estadoData&&d.estadoData.length>0)megaPrompt+="Estados: "+d.estadoData.slice(0,5).map(t=>t.name+":"+t.value).join(", ")+"\n";
+
+        megaPrompt+="\nMENCIONES POSITIVAS DESTACADAS:\n";
+        topPos.forEach((r)=>megaPrompt+=r.fuente+"|@"+r.autor+"|"+r.alcance+" alc|\""+r.contenido.substring(0,120)+"\"|"+r.link+"\n");
+        megaPrompt+="\nMENCIONES NEGATIVAS DESTACADAS:\n";
+        topNeg.forEach((r)=>megaPrompt+=r.fuente+"|@"+r.autor+"|"+r.alcance+" alc|\""+r.contenido.substring(0,120)+"\"|"+r.link+"\n");
+        if(allSoc.length>0){megaPrompt+="\nMUESTRA REDES ("+allSoc.length+"):\n";allSoc.forEach((r,i)=>megaPrompt+=fmtSM(r,i)+"\n")}
+        if(allMed.length>0){megaPrompt+="\nMUESTRA MEDIOS ("+allMed.length+"):\n";allMed.forEach((r,i)=>megaPrompt+=fmtMM(r,i)+"\n")}
+        megaPrompt+="══════════════════════════════════════════════\n";
       }
+
+      megaPrompt+="\nFORMATO: JSON válido sin markdown ni backticks. NO uses saltos de línea dentro de valores.";
 
       const result=await callGemini(megaPrompt);
       if(!result)throw new Error("Sin respuesta");
 
-      /* Parse response - expect {subjectName: {key:value}} */
       let raw=result.text||"";
       raw=raw.replace(/```json|```/g,"").trim();
       const fi=raw.indexOf("{");const li=raw.lastIndexOf("}");
       if(fi>=0&&li>fi)raw=raw.substring(fi,li+1);
       const parsed=JSON.parse(raw);
 
-      /* Assign AI texts to each subject */
-      for(const sub of subjects){
+      for(const sub of subjects.filter(s=>s.pd)){
         const subData=parsed[sub.name];
         if(!subData)continue;
         const aiTexts:Record<string,string>={};
         const keys=["resumen","picos","sentimiento","tendSent","fuentes","hora","conclusiones","recomendaciones","tier","top5med","tipoNota","estado","topPub","picosRedes","picosMedios"];
-        keys.forEach(k=>{if(subData[k]){const v=subData[k];const raw=typeof v==="string"?v:Array.isArray(v)?v.map(String).join(" || "):JSON.stringify(v);aiTexts[k]=fixAiUrls(raw)}});
+        keys.forEach(k=>{if(subData[k]){const v=subData[k];const raw2=typeof v==="string"?v:Array.isArray(v)?v.map(String).join(" || "):JSON.stringify(v);aiTexts[k]=fixAiUrls(raw2)}});
         if(subData.temas){
-          if(typeof subData.temas==="string"){
-            aiTexts.temas=fixAiUrls(subData.temas);
-          }else if(Array.isArray(subData.temas)){
-            /* Fix URLs inside each tema object */
-            const fixed=subData.temas.map((t:Record<string,string>)=>{
-              if(t&&typeof t==="object"){
-                const ft={...t};
-                if(ft.detalle)ft.detalle=fixAiUrls(ft.detalle);
-                return ft;
-              }
-              return t;
-            });
+          if(typeof subData.temas==="string"){aiTexts.temas=fixAiUrls(subData.temas)}
+          else if(Array.isArray(subData.temas)){
+            const fixed=subData.temas.map((t:Record<string,string>)=>{if(t&&typeof t==="object"){const ft={...t};if(ft.detalle)ft.detalle=fixAiUrls(ft.detalle);return ft}return t});
             aiTexts.temas=JSON.stringify(fixed);
-          }else{
-            aiTexts.temas=JSON.stringify(subData.temas);
-          }
+          }else{aiTexts.temas=JSON.stringify(subData.temas)}
         }
         updateSubject(sub.id,{aiTexts});
       }
       setMultiGenerated(true);
-    }catch(e){console.error("Multi AI error:",e);alert("Error al generar análisis multi-sujeto: "+String(e))}
+      setMultiGenStatus("Análisis generado correctamente para "+subjects.filter(s=>s.pd).length+" sujetos");
+    }catch(e){console.error("Multi AI error:",e);alert("Error al generar análisis: "+String(e));setMultiGenStatus("")}
     setMultiAiLoading(false);
   };
 
@@ -1239,7 +1267,7 @@ FORMATO: JSON válido sin markdown ni backticks. NO uses saltos de línea dentro
 
           {/* Global config */}
           <div className="bg-white rounded-xl p-5 border border-gray-100 mb-5">
-            <div className="text-sm font-bold text-gray-700 mb-3">Configuración General</div>
+            <div className="flex justify-between items-center mb-3"><div className="text-sm font-bold text-gray-700">Configuración General</div><button onClick={()=>setView("brandkit")} className="text-[11px] text-blue-500 bg-transparent border-none cursor-pointer hover:underline flex items-center gap-1"><Palette size={12}/> Identidad Corporativa</button></div>
             <div className="grid gap-2.5">
               <input value={multiTitle} onChange={e=>setMultiTitle(e.target.value)} placeholder="Título del reporte" className="px-3.5 py-2.5 rounded-lg border border-gray-200 text-sm outline-none focus:border-blue-400"/>
               <div className="grid grid-cols-2 gap-2.5">
@@ -1314,6 +1342,7 @@ FORMATO: JSON válido sin markdown ni backticks. NO uses saltos de línea dentro
           </button>
 
           {/* Generate button */}
+          {multiGenStatus&&<div className="mt-4 p-4 bg-green-50 rounded-xl border border-green-200"><p className="text-sm text-green-700 font-medium flex items-center gap-2"><Check size={14}/> {multiGenStatus}</p></div>}
           {subjects.length>0&&subjects.some(s=>s.pd)&&(
             <div className="mt-6 flex gap-3">
               {geminiKey&&<button onClick={generateMultiAI} disabled={multiAiLoading} className="flex-1 py-3 rounded-xl text-sm font-bold text-white border-none cursor-pointer flex items-center justify-center gap-2" style={{background:multiAiLoading?"#94a3b8":"linear-gradient(135deg,#8b5cf6,#7c3aed)"}}>
@@ -1510,7 +1539,7 @@ FORMATO: JSON válido sin markdown ni backticks. NO uses saltos de línea dentro
                 const doc=new DocxDoc({styles:{default:{document:{run:{font:"Arial",size:24},paragraph:{spacing:{line:240},alignment:AlignmentType.JUSTIFIED}}}},sections:[{properties:{page:{size:{width:15840,height:12240,orientation:PageOrientation.LANDSCAPE},margin:{top:720,right:900,bottom:720,left:900}}},children:ch as InstanceType<typeof Paragraph>[]}]});
                 const buf=await Packer.toBlob(doc);saveAs(buf,(multiTitle||"multi-reporte")+".docx");
               }catch(e){console.error(e);alert("Error: "+String(e))}
-              setExportLoading("");
+              finally{setExportLoading("")}
             }} className="flex items-center gap-1.5 px-4 py-1.5 border-none rounded-lg cursor-pointer text-xs font-semibold text-white" style={{background:"linear-gradient(135deg,#3b82f6,#2563eb)"}}>{exportLoading?<><RefreshCw size={12} className="animate-spin"/> Exportando...</>:<><Download size={12}/> Exportar Word</>}</button>
           </div>
           {showChecklist&&<div className="max-w-[940px] mx-auto px-7 py-4"><div className="bg-white rounded-xl p-5 border border-gray-100 shadow-lg"><div className="flex justify-between items-center mb-3"><div className="text-sm font-bold text-gray-700">Módulos activos (aplica a todos los sujetos)</div><div className="text-[10px] text-gray-400">Arrastra para reordenar</div></div><div className="grid gap-1">{multiOrder.map((s,i)=>(<div key={s} draggable onDragStart={()=>handleMultiDragStart(i)} onDragOver={(e)=>handleMultiDragOver(e,i)} onDragEnd={handleDragEnd} className="flex items-center gap-2 px-3 py-2 rounded-lg border border-gray-100 bg-gray-50/50 cursor-grab active:cursor-grabbing hover:bg-blue-50 transition-colors select-none"><div className="text-gray-300 flex-shrink-0"><svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><circle cx="8" cy="4" r="2"/><circle cx="16" cy="4" r="2"/><circle cx="8" cy="12" r="2"/><circle cx="16" cy="12" r="2"/><circle cx="8" cy="20" r="2"/><circle cx="16" cy="20" r="2"/></svg></div><span className="text-[11px] text-gray-500 font-mono w-5">{multiEnabled[s]!==false?String(multiOrder.filter((_,j)=>j<=i&&multiEnabled[_]!==false).length):""}</span><input type="checkbox" checked={multiEnabled[s]!==false} onChange={()=>toggleMultiSec(s)} className="accent-blue-500" onClick={e=>e.stopPropagation()}/><span className="text-xs text-gray-700 flex-1">{s}</span></div>))}</div></div></div>}
