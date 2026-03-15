@@ -562,7 +562,17 @@ FORMATO: JSON válido sin markdown ni backticks. NO uses saltos de línea dentro
       megaPrompt+="RESPONDE EXCLUSIVAMENTE con un JSON válido. La estructura es:\n{\n";
       megaPrompt+=subjects.map(s=>'  "'+s.name+'": { "resumen":"...", "temas":"[array JSON]", "picos":"...", "sentimiento":"...", "tendSent":"...", "fuentes":"...", "hora":"...", "tier":"...", "top5med":"...", "tipoNota":"...", "estado":"...", "topPub":"...", "conclusiones":"...", "recomendaciones":"..." }').join(",\n");
       megaPrompt+="\n}\n\n";
-      megaPrompt+="REGLAS:\n- Cada sección usa \" || \" para separar párrafos\n- Nombres de medios/usuarios con ***nombre***\n- Citas con [Ver fuente](URL)\n- NUNCA cuestionar la clasificación de sentimiento\n- Cada sujeto tiene su análisis INDEPENDIENTE\n\n";
+      megaPrompt+="REGLAS IMPORTANTES:\n";
+      megaPrompt+="- Cada sección usa \" || \" para separar párrafos. Cada párrafo debe tener al menos 3-4 oraciones.\n";
+      megaPrompt+="- Nombres de medios/usuarios con ***nombre***\n";
+      megaPrompt+="- Citas con [Ver fuente](URL real)\n";
+      megaPrompt+="- NUNCA cuestionar la clasificación de sentimiento\n";
+      megaPrompt+="- Cada sujeto tiene su análisis INDEPENDIENTE y EXTENSO\n";
+      megaPrompt+="- El resumen debe tener mínimo 4 párrafos con contexto, narrativa dominante, dinámica y balance reputacional\n";
+      megaPrompt+="- Las conclusiones deben tener mínimo 3 párrafos\n";
+      megaPrompt+="- Las recomendaciones deben tener mínimo 4 recomendaciones separadas por ||, cada una con **Título:** explicación\n";
+      megaPrompt+="- El campo temas DEBE ser un array JSON con 3-5 objetos {tema:string, detalle:string}. El detalle debe ser extenso (3+ oraciones) y mencionar fuentes con ***nombre***\n";
+      megaPrompt+="- Los campos picos, sentimiento, tendSent, fuentes, hora, tier, top5med, tipoNota, estado deben tener análisis de al menos 2 párrafos cada uno\n\n";
 
       for(const sub of subjects){
         if(!sub.pd)continue;
@@ -605,7 +615,15 @@ FORMATO: JSON válido sin markdown ni backticks. NO uses saltos de línea dentro
         const aiTexts:Record<string,string>={};
         const keys=["resumen","picos","sentimiento","tendSent","fuentes","hora","conclusiones","recomendaciones","tier","top5med","tipoNota","estado","topPub","picosRedes","picosMedios"];
         keys.forEach(k=>{if(subData[k]){const v=subData[k];aiTexts[k]=typeof v==="string"?v:Array.isArray(v)?v.map(String).join(" || "):JSON.stringify(v)}});
-        if(subData.temas)aiTexts.temas=typeof subData.temas==="string"?subData.temas:JSON.stringify(subData.temas);
+        if(subData.temas){
+          if(typeof subData.temas==="string"){
+            aiTexts.temas=subData.temas;
+          }else if(Array.isArray(subData.temas)){
+            aiTexts.temas=JSON.stringify(subData.temas);
+          }else{
+            aiTexts.temas=JSON.stringify(subData.temas);
+          }
+        }
         updateSubject(sub.id,{aiTexts});
       }
       setMultiGenerated(true);
@@ -849,6 +867,7 @@ FORMATO: JSON válido sin markdown ni backticks. NO uses saltos de línea dentro
               new TextRun({text:(ti+1)+". "+temas[ti].tema,bold:true,size:24,font:"Arial"})]}));
             ch.push(new Paragraph({spacing:{after:80},alignment:AlignmentType.JUSTIFIED,children:mkRuns(temas[ti].detalle)}));
           }
+
         }else if(isTopPub){
           /* ── Top Publicaciones: Word tables ── */
           const tpText=aiTexts.topPub||aiTopPub();
@@ -1283,9 +1302,14 @@ FORMATO: JSON válido sin markdown ni backticks. NO uses saltos de línea dentro
             </div>
           )}
 
-          {!geminiKey&&<div className="mt-4 p-4 bg-amber-50 rounded-xl border border-amber-200">
-            <p className="text-sm text-amber-700">Configura tu API Key de Gemini en <button onClick={()=>setView("brandkit")} className="font-bold underline bg-transparent border-none cursor-pointer text-amber-700">Identidad</button> para generar análisis.</p>
-          </div>}
+          <div className="bg-white rounded-xl p-5 border border-gray-100 mb-5">
+            <div className="text-sm font-bold text-gray-700 mb-3">API Key de Gemini</div>
+            <div className="flex gap-2">
+              <input type="password" value={geminiKey} onChange={e=>setGeminiKey(e.target.value)} placeholder="Pega tu API Key de Google AI Studio" className="flex-1 px-3.5 py-2.5 rounded-lg border border-gray-200 text-sm outline-none focus:border-blue-400"/>
+              {geminiKey&&<span className="text-green-500 text-xs flex items-center">Configurada</span>}
+            </div>
+            <div className="text-[10px] text-gray-400 mt-1">Obtén tu key gratis en <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener noreferrer" className="text-blue-500 underline">aistudio.google.com</a></div>
+          </div>
         </div>)}
 
         {/* ══════ MULTI-SUBJECT PREVIEW ══════ */}
@@ -1296,6 +1320,7 @@ FORMATO: JSON válido sin markdown ni backticks. NO uses saltos de línea dentro
             {multiPeriod&&<span className="text-xs text-gray-400">{multiPeriod}</span>}
             <span className="text-xs text-gray-400">{subjects.filter(s=>s.pd).length} sujetos</span>
             <div className="flex-1"/>
+            {geminiKey&&<button onClick={generateMultiAI} disabled={multiAiLoading} className="flex items-center gap-1.5 px-4 py-1.5 border-none rounded-lg cursor-pointer text-xs font-semibold text-white" style={{background:multiAiLoading?"#94a3b8":"linear-gradient(135deg,#8b5cf6,#7c3aed)"}}>{multiAiLoading?<><RefreshCw size={12} className="animate-spin"/> Generando...</>:<><Sparkles size={12}/> Generar IA</>}</button>}
             <button onClick={()=>setShowChecklist(!showChecklist)} className="flex items-center gap-1.5 px-3 py-1.5 bg-white border border-gray-200 rounded-lg cursor-pointer text-xs text-gray-500 hover:bg-gray-50"><Check size={12}/> Módulos</button>
             {/* Per-subject tab switchers */}
             <div className="flex gap-2">{subjects.filter(s=>s.pd&&s.sData.length>0&&s.mData.length>0).length>0&&<span className="text-[10px] text-gray-400 mr-1">Vista:</span>}
@@ -1337,6 +1362,52 @@ FORMATO: JSON válido sin markdown ni backticks. NO uses saltos de línea dentro
                   return new Paragraph({alignment:AlignmentType.CENTER,spacing:{after:100},children:[new ImageRun({data:cap.d,transformation:{width:w2,height:h2},type:"png"})]});
                 };
 
+                const bdr2={style:"single" as const,size:1,color:"E2E8F0"};
+                const bds2={top:bdr2,bottom:bdr2,left:bdr2,right:bdr2};
+                const cm2={top:50,bottom:50,left:80,right:80};
+                const hdrBg2={fill:"F8FAFC",type:D.ShadingType.CLEAR};
+                const mkT5m=(items:Top5Item[],label:string,title?:string)=>{
+                  const res:unknown[]=[];
+                  if(title)res.push(new Paragraph({spacing:{before:100,after:40},children:[new TextRun({text:title,bold:true,size:22,font:"Arial"})]}));
+                  const cWm=[329,8505,850,737];const tWm=cWm.reduce((a,b)=>a+b,0);
+                  const rows=[new D.TableRow({children:[
+                    new D.TableCell({borders:bds2,shading:hdrBg2,margins:cm2,width:{size:cWm[0],type:D.WidthType.DXA},children:[new Paragraph({alignment:AlignmentType.CENTER,children:[new TextRun({text:"#",bold:true,size:18,font:"Arial"})]})]}),
+                    new D.TableCell({borders:bds2,shading:hdrBg2,margins:cm2,width:{size:cWm[1],type:D.WidthType.DXA},children:[new Paragraph({children:[new TextRun({text:"Nombre",bold:true,size:18,font:"Arial"})]})]}),
+                    new D.TableCell({borders:bds2,shading:hdrBg2,margins:cm2,width:{size:cWm[2],type:D.WidthType.DXA},children:[new Paragraph({alignment:AlignmentType.CENTER,children:[new TextRun({text:label,bold:true,size:18,font:"Arial"})]})]}),
+                    new D.TableCell({borders:bds2,shading:hdrBg2,margins:cm2,width:{size:cWm[3],type:D.WidthType.DXA},children:[new Paragraph({alignment:AlignmentType.CENTER,children:[new TextRun({text:"Link",bold:true,size:18,font:"Arial"})]})]})
+                  ]})];
+                  items.forEach((it,idx)=>{const lk=it.link&&it.link!=="undefined"?[new ExternalHyperlink({children:[new TextRun({text:"Ver",style:"Hyperlink",size:18,font:"Arial"})],link:it.link})]:[new TextRun({text:"—",size:18,color:"CCCCCC"})];
+                    rows.push(new D.TableRow({children:[
+                      new D.TableCell({borders:bds2,margins:cm2,width:{size:cWm[0],type:D.WidthType.DXA},children:[new Paragraph({alignment:AlignmentType.CENTER,children:[new TextRun({text:String(idx+1),bold:true,size:18,font:"Arial"})]})]}),
+                      new D.TableCell({borders:bds2,margins:cm2,width:{size:cWm[1],type:D.WidthType.DXA},children:[new Paragraph({children:[new TextRun({text:it.nombre+(it.titulo?" — "+it.titulo:""),size:18,font:"Arial"})]})]}),
+                      new D.TableCell({borders:bds2,margins:cm2,width:{size:cWm[2],type:D.WidthType.DXA},children:[new Paragraph({alignment:AlignmentType.CENTER,children:[new TextRun({text:label==="Costo"||label==="AVE"?fmtM(it.valor):fmt(it.valor),bold:true,size:18,font:"Arial",color:acHex})]})]}),
+                      new D.TableCell({borders:bds2,margins:cm2,width:{size:cWm[3],type:D.WidthType.DXA},children:[new Paragraph({alignment:AlignmentType.CENTER,children:lk as InstanceType<typeof TextRun>[]})]})
+                    ]}));
+                  });
+                  res.push(new D.Table({width:{size:tWm,type:D.WidthType.DXA},columnWidths:cWm,rows}));return res;
+                };
+                const mkMenM=(items:{autor:string;contenido:string;link:string;fuente:string;alcance:number}[],sentColor:string,title:string)=>{
+                  const res:unknown[]=[];const sc=hex6(sentColor);const cWm=[329,8505,850,737];const tWm=cWm.reduce((a,b)=>a+b,0);
+                  const hdrSh={fill:sc,type:D.ShadingType.CLEAR};
+                  res.push(new Paragraph({spacing:{before:120,after:40},children:[new TextRun({text:title,bold:true,size:24,font:"Arial",color:sc})]}));
+                  const rows=[new D.TableRow({children:[
+                    new D.TableCell({borders:bds2,shading:hdrSh,margins:cm2,width:{size:cWm[0],type:D.WidthType.DXA},children:[new Paragraph({alignment:AlignmentType.CENTER,children:[new TextRun({text:"#",bold:true,size:18,font:"Arial",color:"FFFFFF"})]})]}),
+                    new D.TableCell({borders:bds2,shading:hdrSh,margins:cm2,width:{size:cWm[1],type:D.WidthType.DXA},children:[new Paragraph({children:[new TextRun({text:"Mención",bold:true,size:18,font:"Arial",color:"FFFFFF"})]})]}),
+                    new D.TableCell({borders:bds2,shading:hdrSh,margins:cm2,width:{size:cWm[2],type:D.WidthType.DXA},children:[new Paragraph({alignment:AlignmentType.CENTER,children:[new TextRun({text:"Alcance",bold:true,size:18,font:"Arial",color:"FFFFFF"})]})]}),
+                    new D.TableCell({borders:bds2,shading:hdrSh,margins:cm2,width:{size:cWm[3],type:D.WidthType.DXA},children:[new Paragraph({alignment:AlignmentType.CENTER,children:[new TextRun({text:"Link",bold:true,size:18,font:"Arial",color:"FFFFFF"})]})]})
+                  ]})];
+                  items.forEach((it,idx)=>{const lk=it.link?[new ExternalHyperlink({children:[new TextRun({text:"Ver",style:"Hyperlink",size:18,font:"Arial"})],link:it.link})]:[new TextRun({text:"—",size:18,color:"CCCCCC"})];
+                    const leftBdr={...bds2,left:{style:"single" as const,size:6,color:sc}};
+                    rows.push(new D.TableRow({children:[
+                      new D.TableCell({borders:leftBdr,margins:cm2,width:{size:cWm[0],type:D.WidthType.DXA},children:[new Paragraph({alignment:AlignmentType.CENTER,children:[new TextRun({text:String(idx+1),bold:true,size:18,font:"Arial"})]})]}),
+                      new D.TableCell({borders:bds2,margins:cm2,width:{size:cWm[1],type:D.WidthType.DXA},children:[new Paragraph({children:[new TextRun({text:it.autor,bold:true,size:18,font:"Arial"}),new TextRun({text:" — "+it.fuente,size:16,font:"Arial",color:"94A3B8"})]}),new Paragraph({spacing:{after:20},children:[new TextRun({text:it.contenido.substring(0,180),size:16,font:"Arial",color:"64748B"})]})]}),
+                      new D.TableCell({borders:bds2,margins:cm2,width:{size:cWm[2],type:D.WidthType.DXA},children:[new Paragraph({alignment:AlignmentType.CENTER,children:[new TextRun({text:it.alcance>0?fmt(it.alcance):"—",bold:true,size:18,font:"Arial",color:sc})]})]}),
+                      new D.TableCell({borders:bds2,margins:cm2,width:{size:cWm[3],type:D.WidthType.DXA},children:[new Paragraph({alignment:AlignmentType.CENTER,children:lk as InstanceType<typeof TextRun>[]})]})
+                    ]}));
+                  });
+                  res.push(new D.Table({width:{size:tWm,type:D.WidthType.DXA},columnWidths:cWm,rows}));return res;
+                };
+
                 for(const sub of subjects.filter(s=>s.pd)){
                   const spd=sub.pd!;const at=sub.aiTexts;
                   const getFb=(k:string):string=>{
@@ -1375,14 +1446,25 @@ FORMATO: JSON válido sin markdown ni backticks. NO uses saltos de línea dentro
                         ch.push(bl());
                       }
                     }else if(secName==="Menciones Populares por Sentimiento"){
-                      const menEl=document.querySelector("[data-multi-menciones=\""+sub.id+"\"]") as HTMLElement|null;
-                      if(menEl){ch.push(hd(multiSecNum(secName)+". "+secName));const cap=await capAny(menEl);ch.push(imgFromCap(cap));ch.push(bl())}
+                      ch.push(hd(multiSecNum(secName)+". "+secName));
+                      if(spd.topPositivas.length>0)ch.push(...mkMenM(spd.topPositivas,brand.positiveColor,"Top 5 Positivas") as InstanceType<typeof Paragraph>[]);
+                      ch.push(bl());
+                      if(spd.topNegativas.length>0)ch.push(...mkMenM(spd.topNegativas,brand.negativeColor,"Top 5 Negativas") as InstanceType<typeof Paragraph>[]);
+                      ch.push(bl());
                     }else if(secName==="Top Publicaciones"){
-                      /* Capture entire Top Pub section as image */
                       ch.push(hd(multiSecNum(secName)+". "+secName));
                       const tpTxt=getFb("topPub");if(tpTxt)ch.push(...aiP(tpTxt));
-                      /* Just capture charts - TopPub tables are rendered in HTML */
+                      const sHA=spd.totalAlcance>0;const sHC=spd.totalCosto>0;const sLbl=spd.dataType==="social"?"AVE":"Costo";
+                      if(sHA)ch.push(...mkT5m(spd.top5AlcGeneral,"Alcance","Top 5 General por Alcance") as InstanceType<typeof Paragraph>[]);
+                      if(sHC&&spd.top5CostGeneral.length>0)ch.push(...mkT5m(spd.top5CostGeneral,sLbl,"Top 5 General por "+sLbl) as InstanceType<typeof Paragraph>[]);
                       ch.push(bl());
+                      const srcs=spd.dataType==="media"?VM:spd.dataType==="social"?VS:[...VS,...VM];
+                      for(const src of srcs){const aI=spd.top5AlcPorFuente[src];const cI=spd.top5CostPorFuente[src];if(!aI?.length&&!cI?.length)continue;
+                        ch.push(new Paragraph({spacing:{before:120,after:40},children:[new TextRun({text:src,bold:true,size:24,font:"Arial"})]}));
+                        if(sHA&&aI?.length)ch.push(...mkT5m(aI,"Alcance","Por Alcance") as InstanceType<typeof Paragraph>[]);
+                        if(sHC&&cI?.length)ch.push(...mkT5m(cI,sLbl,"Por "+sLbl) as InstanceType<typeof Paragraph>[]);
+                        ch.push(bl());
+                      }
                     }else{
                       /* Chart-based sections */
                       const aiKey=aiKeyMap[secName]||"";
@@ -1525,7 +1607,7 @@ FORMATO: JSON válido sin markdown ni backticks. NO uses saltos de línea dentro
                 {/* Top 5 */}
                 <div style={{order:multiOrder.indexOf("Top Publicaciones")}}>{multiOn("Top Publicaciones")&&<Sec title={mSN("Top Publicaciones")+"Top Publicaciones"} icon={<Trophy size={18} color={brand.accentColor}/>} brand={brand}>
                   <AIBlock text={sAiT("topPub",aiTopPub())} brand={brand} loading={false}/>
-                  <div className="mt-4">
+                  <div data-multi-toppub={sub.id} className="mt-4">
                     {sHasAlc&&sHasCost?(<div className="grid grid-cols-2 gap-4 mb-5"><div><div className="text-xs font-bold text-gray-700 mb-2">Top 5 General por Alcance</div><T5Table items={spd.top5AlcGeneral} label="Alcance" brand={brand} showTitulo/></div><div><div className="text-xs font-bold text-gray-700 mb-2">Top 5 General por {sCostLabel}</div><T5Table items={spd.top5CostGeneral} label={sCostLabel} brand={brand} showTitulo/></div></div>):sHasAlc?(<div className="flex justify-center mb-5"><div className="w-full max-w-lg"><div className="text-xs font-bold text-gray-700 mb-2">Top 5 General por Alcance</div><T5Table items={spd.top5AlcGeneral} label="Alcance" brand={brand} showTitulo/></div></div>):sHasCost?(<div className="flex justify-center mb-5"><div className="w-full max-w-lg"><div className="text-xs font-bold text-gray-700 mb-2">Top 5 General por {sCostLabel}</div><T5Table items={spd.top5CostGeneral} label={sCostLabel} brand={brand} showTitulo/></div></div>):null}
                     {/* Per-source tables */}
                     {(spd.dataType==="social"?VS:spd.dataType==="media"?VM:[...VS,...VM]).filter(s=>spd.top5AlcPorFuente[s]?.length>0||spd.top5CostPorFuente[s]?.length>0).map(s=>(<div key={s} className="mb-4"><div className="flex items-center gap-2 mb-2"><div className="w-6 h-6 rounded-lg flex items-center justify-center" style={{background:srcC[s]||brand.mediaColors[s]||brand.chartColors[0]}}>{socIco[s]||medIco[s]||<span className="text-white text-[10px] font-bold">{s.substring(0,2)}</span>}</div><span className="text-sm font-bold text-gray-800">{s}</span></div><div className="grid grid-cols-2 gap-4">{sHasAlc&&spd.top5AlcPorFuente[s]?.length>0&&<div><div className="text-[11px] font-semibold text-gray-500 mb-1">Por Alcance</div><T5Table items={spd.top5AlcPorFuente[s]} label="Alcance" brand={brand} showTitulo/></div>}{sHasCost&&spd.top5CostPorFuente[s]?.length>0&&<div><div className="text-[11px] font-semibold text-gray-500 mb-1">Por {sCostLabel}</div><T5Table items={spd.top5CostPorFuente[s]} label={sCostLabel} brand={brand} showTitulo/></div>}</div></div>))}
