@@ -304,6 +304,20 @@ const FUS_SECS=["Indicadores Clave","Distribución por Fuente","Resumen Ejecutiv
 interface PptxSlide{background:{fill:string};addText(t:string,o:Record<string,unknown>):void;addShape(t:string,o:Record<string,unknown>):void}
 interface PptxGen{layout:string;addSlide():PptxSlide;writeFile(o:{fileName:string}):void}
 function hex6(c:string){const h=c.replace("#","").replace(/[^0-9a-fA-F]/g,"");return h.length>=6?h.substring(0,6):h.padEnd(6,"0")}
+/* Fix raw URLs in AI text to [Ver fuente](URL) format */
+function fixAiUrls(text:string):string{
+  if(!text||typeof text!=="string")return text||"";
+  let t=text;
+  /* Pattern 1: [https://...] → [Ver fuente](https://...) */
+  t=t.replace(/\[\s*(https?:\/\/[^\]\s]+)\s*\]/g,"[Ver fuente]($1)");
+  /* Pattern 2: bare URLs not inside [Ver fuente](URL) - replace carefully */
+  const parts=t.split(/(\[Ver fuente\]\([^)]+\))/g);
+  t=parts.map(p=>{
+    if(p.startsWith("[Ver fuente]"))return p;
+    return p.replace(/(?:^|\s)(https?:\/\/[^\s,;'")]+)/g,(m,url)=>" [Ver fuente]("+url.replace(/[.)]+$/,"")+")");
+  }).join("");
+  return t;
+}
 const PROMPT_TEMPLATES=[
   {label:"Marca / Producto",text:"Actúa como analista senior de reputación corporativa. Evalúa la percepción de marca: posicionamiento vs competidores, drivers de preferencia, vulnerabilidades reputacionales. Identifica oportunidades de amplificación y riesgos de crisis. Analiza el sentimiento por atributo de marca (calidad, precio, servicio, innovación)."},
   {label:"Persona pública / Político",text:"Actúa como consultor senior en comunicación política y opinión pública. Analiza el posicionamiento del personaje: narrativas a favor y en contra, temas que generan polarización, actores que amplifican o contrarrestan. Evalúa capital político y vulnerabilidades. Identifica oportunidades de posicionamiento estratégico."},
@@ -503,7 +517,7 @@ FORMATO: JSON válido sin markdown ni backticks. NO uses saltos de línea dentro
       allSoc.forEach((r,i)=>{if(r.Link)urlMap["S"+(i+1)]=r.Link});
       allMed.forEach((r,i)=>{if(r.Link)urlMap["M"+(i+1)]=r.Link});
       const fixRefs=(text:string)=>text.replace(/\[([SM]\d+)\]/g,(_,ref)=>{const url=urlMap[ref];return url?"[Ver fuente]("+url+")":"["+ref+"]"});
-      Object.keys(tx).forEach(k=>{if(typeof tx[k]==="string")tx[k]=fixRefs(tx[k])});
+      Object.keys(tx).forEach(k=>{if(typeof tx[k]==="string")tx[k]=fixAiUrls(fixRefs(tx[k]))});
       setAiTexts(tx);setAiTextsByTab(p=>({...p,[tab]:tx}));setAiGenerated(true);
       const inputTk=result.inputTokens;const outputTk=result.outputTokens;
       const costUsd=(inputTk*0.0000001)+(outputTk*0.0000004);
@@ -565,7 +579,7 @@ FORMATO: JSON válido sin markdown ni backticks. NO uses saltos de línea dentro
       megaPrompt+="REGLAS IMPORTANTES:\n";
       megaPrompt+="- Cada sección usa \" || \" para separar párrafos. Cada párrafo debe tener al menos 3-4 oraciones.\n";
       megaPrompt+="- Nombres de medios/usuarios con ***nombre***\n";
-      megaPrompt+="- Citas con [Ver fuente](URL real)\n";
+      megaPrompt+="- SIEMPRE usa el formato [Ver fuente](URL_COMPLETA) para enlaces. NUNCA pongas URLs sueltas ni entre corchetes solos como [https://...]. Siempre así: [Ver fuente](https://ejemplo.com/nota)\n";
       megaPrompt+="- NUNCA cuestionar la clasificación de sentimiento\n";
       megaPrompt+="- Cada sujeto tiene su análisis INDEPENDIENTE y EXTENSO\n";
       megaPrompt+="- El resumen debe tener mínimo 4 párrafos con contexto, narrativa dominante, dinámica y balance reputacional\n";
@@ -614,12 +628,21 @@ FORMATO: JSON válido sin markdown ni backticks. NO uses saltos de línea dentro
         if(!subData)continue;
         const aiTexts:Record<string,string>={};
         const keys=["resumen","picos","sentimiento","tendSent","fuentes","hora","conclusiones","recomendaciones","tier","top5med","tipoNota","estado","topPub","picosRedes","picosMedios"];
-        keys.forEach(k=>{if(subData[k]){const v=subData[k];aiTexts[k]=typeof v==="string"?v:Array.isArray(v)?v.map(String).join(" || "):JSON.stringify(v)}});
+        keys.forEach(k=>{if(subData[k]){const v=subData[k];const raw=typeof v==="string"?v:Array.isArray(v)?v.map(String).join(" || "):JSON.stringify(v);aiTexts[k]=fixAiUrls(raw)}});
         if(subData.temas){
           if(typeof subData.temas==="string"){
-            aiTexts.temas=subData.temas;
+            aiTexts.temas=fixAiUrls(subData.temas);
           }else if(Array.isArray(subData.temas)){
-            aiTexts.temas=JSON.stringify(subData.temas);
+            /* Fix URLs inside each tema object */
+            const fixed=subData.temas.map((t:Record<string,string>)=>{
+              if(t&&typeof t==="object"){
+                const ft={...t};
+                if(ft.detalle)ft.detalle=fixAiUrls(ft.detalle);
+                return ft;
+              }
+              return t;
+            });
+            aiTexts.temas=JSON.stringify(fixed);
           }else{
             aiTexts.temas=JSON.stringify(subData.temas);
           }
